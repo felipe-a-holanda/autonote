@@ -1,0 +1,55 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Output and runtime files
+recordings/
+*.mp3
+*.wav
+*_diarized.json
+*_speakers.json
+*_speakers_labeled.json
+*_summary.md
+*_formatted.md
+*_metadata.json
+
+# Configuration
+.autonoterc
+.env
+
+# Virtual Environments
+venv/
+env/
+.venv
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store

@@ -1,0 +1,29 @@
+# Autonote Settings Example Template
+# Copy this file to .autonoterc or ~/.autonoterc and fill in your values.
+
+# Directory to save all original WAV/MP3 files, raw transcripts, and final markdown 
+RECORDINGS_DIR="./recordings"
+
+# Whisper settings (Valid models: tiny, base, small, medium, turbo, large-v3)
+WHISPER_MODEL="turbo"
+WHISPER_LANGUAGE="en"
+
+# Ollama settings for summary generation and raw transcript formatting
+OLLAMA_MODEL="llama3.1:8b"
+OLLAMA_REFORMAT_MODEL="llama3.1:8b"
+OLLAMA_URL="http://localhost:11434"
+
+# Optional: Path to Obsidian vault to copy final outputs
+VAULT_DIR="/path/to/my/obisdian/vault"
+
+# Optional: Exact path to an Index file to dynamically append Meeting links to
+MEETING_INDEX="/path/to/my/obisdian/vault/Meetings.md"
+
+# Path to the entity dictionary to dynamically inject [[wikilinks]]
+ENTITIES_FILE="./entities.yml"
+
+# Microphone input volume amplification scaling factor
+MIC_VOLUME="2.0"
+
+# Print internal execution traces to console
+DEBUG="false"

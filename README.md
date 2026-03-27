@@ -9,9 +9,9 @@ cd autonote
 pip install -e .
 ```
 
-You'll need a `.hushnoterc` file in either your home directory (`~/.hushnoterc`) or locally in the `autonote` code folder. 
+You'll need a `.autonoterc` file in either your home directory (`~/.autonoterc`) or locally in the `autonote` code folder. We have heavily documented an example in `.autonoterc.example`.
 
-### Configuration (`.hushnoterc`)
+### Configuration (`.autonoterc`)
 ```env
 RECORDINGS_DIR="./recordings"
 WHISPER_MODEL="turbo"

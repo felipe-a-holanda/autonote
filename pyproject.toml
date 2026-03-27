@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autonote"
+version = "0.1.0"
+description = "Meeting Copilot - Record, Transcribe, Diarize, Summarize."
+authors = [{ name = "Felipe" }]
+requires-python = ">=3.9"
+dependencies = [
+    "faster-whisper",
+    "pyannote.audio",
+    "requests",
+    "tqdm",
+    "python-dotenv",
+    "pyyaml",
+    "rich"
+]
+
+[project.scripts]
+autonote = "autonote.cli:main"
