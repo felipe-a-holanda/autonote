@@ -9,10 +9,10 @@ litellm.telemetry = False
 
 # Default presets for LLM models
 LLM_PRESETS = {
-    "fast": config.get("PRESET_FAST", "openai/gpt-4o-mini"),
-    "smart": config.get("PRESET_SMART", "anthropic/claude-3-5-sonnet-20240620"),
-    "cheap": config.get("PRESET_CHEAP", "deepseek/deepseek-chat"),
     "local": config.get("PRESET_LOCAL", "ollama/llama3.1:8b"),
+    "cheap": config.get("PRESET_CHEAP", "deepseek/deepseek-chat"),
+    "fast": config.get("PRESET_FAST", "openai/gpt-5.4"),
+    "smart": config.get("PRESET_SMART", "anthropic/claude-sonnet-4-6"),
 }
 
 def query_llm(
@@ -93,7 +93,9 @@ def query_llm(
                         cost_str = f" (${cost:.6f} / R${brl_cost:.4f})"
                     except (ValueError, TypeError):
                         cost_str = f" (${cost:.6f})"
-                        
+                elif not model.startswith("ollama/"):
+                    cost_str = " (cost unknown — model not in litellm pricing DB)"
+
                 log_info(f"LLM Usage: {total_t} tokens (In: {prompt_t}, Out: {completion_t}){cost_str}")
             except Exception:
                 # Fallback if cost calculation fails (e.g. unknown local model)
