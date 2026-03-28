@@ -40,14 +40,14 @@ def setup_parser() -> argparse.ArgumentParser:
     # reformat
     reformat_parser = subparsers.add_parser("reformat", help="Reformat transcript using LLM")
     reformat_parser.add_argument("file", help="Transcript file")
-    reformat_parser.add_argument("-m", "--model", help="LLM model (e.g., llama3.1:8b, openai/gpt-4o, anthropic/claude-3-5-sonnet)")
+    reformat_parser.add_argument("-m", "--model", help="LLM model or preset (fast, smart, cheap, local)")
     reformat_parser.add_argument("-u", "--ollama-url", help="Ollama API URL")
     reformat_parser.add_argument("-o", "--output", help="Output file")
 
     # summarize
     summarize_parser = subparsers.add_parser("summarize", help="Summarize transcript using LLM")
     summarize_parser.add_argument("file", help="Transcript file")
-    summarize_parser.add_argument("-m", "--model", help="LLM model (e.g., llama3.1:8b, openai/gpt-4o, anthropic/claude-3-5-sonnet)")
+    summarize_parser.add_argument("-m", "--model", help="LLM model or preset (fast, smart, cheap, local)")
     summarize_parser.add_argument("-u", "--ollama-url", help="Ollama API URL")
     summarize_parser.add_argument("-f", "--format", default="md", choices=["txt", "md", "json"])
     summarize_parser.add_argument("-o", "--output", help="Output file")
@@ -83,7 +83,7 @@ def setup_parser() -> argparse.ArgumentParser:
     # extract-metadata
     extract_parser = subparsers.add_parser("extract-metadata", help="Extract structural metadata via LLM")
     extract_parser.add_argument("file", help="Transcript text or markdown file")
-    extract_parser.add_argument("-m", "--model", help="LLM model (e.g., llama3.1:8b, openai/gpt-4o, anthropic/claude-3-5-sonnet)")
+    extract_parser.add_argument("-m", "--model", help="LLM model or preset (fast, smart, cheap, local)")
     extract_parser.add_argument("-u", "--ollama-url", help="Ollama API URL")
     extract_parser.add_argument("-o", "--output", help="Output JSON file")
 

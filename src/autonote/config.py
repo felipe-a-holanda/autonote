@@ -31,6 +31,26 @@ def get_config() -> dict:
     config["MIC_VOLUME"] = os.environ.get("MIC_VOLUME", "2.0")
     config["MIC_SOURCE"] = os.environ.get("MIC_SOURCE", "")
     config["SYSTEM_SOURCE"] = os.environ.get("SYSTEM_SOURCE", "")
+    
+    # Simple FX rate logic
+    fx_rate = os.environ.get("USD_TO_BRL")
+    if not fx_rate:
+        potential_fx_files = [
+            os.path.abspath(".autonote_fx"),
+            os.path.expanduser("~/.autonote_fx")
+        ]
+        for fx_path in potential_fx_files:
+            if os.path.exists(fx_path):
+                try:
+                    with open(fx_path, "r") as f:
+                        content = f.read().strip()
+                        if content:
+                            fx_rate = content
+                            break
+                except Exception:
+                    pass
+    
+    config["USD_TO_BRL"] = fx_rate or "5.50"
             
     return config
 
