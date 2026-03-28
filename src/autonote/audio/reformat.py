@@ -4,6 +4,7 @@ Takes raw transcription text and lightly cleans it up.
 """
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from autonote.logger import log_info, log_error
 from autonote.config import config
@@ -76,26 +77,38 @@ def run_reformat(transcription_file: str, model: str = None, ollama_url: str = N
         output_file = str(trans_path.with_name(f"{trans_path.stem}_formatted.md"))
         
     resolved = resolve_model(model)
+    # Always chunk — cloud API models have output token limits (e.g. DeepSeek defaults
+    # to max_tokens=4096) that silently truncate long transcripts if sent whole.
+    # Use a larger chunk size for API models (more context capacity) vs local Ollama.
     if resolved.startswith("ollama/"):
-        chunks = chunk_transcription(transcription, max_words=500)
-        log_info(f"Split transcription into {len(chunks)} chunks.")
+        chunk_size = 500
     else:
-        chunks = [transcription]
-        log_info("API model detected — sending full transcript in one request.")
+        chunk_size = 2500
+    chunks = chunk_transcription(transcription, max_words=chunk_size)
+    log_info(f"Split transcription into {len(chunks)} chunk(s) (chunk_size={chunk_size} words, model={resolved}).")
     
     output_path = Path(output_file)
     output_path.write_text("")
-    
-    chunk_iter = tqdm(chunks, desc=f"Reformatting ({model})", unit="chunk", dynamic_ncols=True) if len(chunks) > 1 else chunks
-    for chunk in chunk_iter:
+
+    def _reformat_chunk(idx_chunk):
+        idx, chunk = idx_chunk
         result = query_reformat(chunk, model=model, api_base=ollama_url, source_file=transcription_file)
-        
         result = result.strip()
         result = re.sub(r"^(?:Here is|Here's).*?(?:transcript|text)?.*?:?\s*\n+", "", result, flags=re.IGNORECASE).strip()
         result = re.sub(r"^\**(?:Cleaned|Formatted|Reformatted)?\s*Transcript\**:\s*\n+", "", result, flags=re.IGNORECASE).strip()
-        
-        with output_path.open("a", encoding="utf-8") as f:
-            f.write(result + "\n\n")
-            
+        return idx, result
+
+    n = len(chunks)
+    results = [None] * n
+    with ThreadPoolExecutor(max_workers=n) as executor:
+        futures = {executor.submit(_reformat_chunk, (i, c)): i for i, c in enumerate(chunks)}
+        pbar = tqdm(as_completed(futures), total=n, desc=f"Reformatting ({model})", unit="chunk", dynamic_ncols=True) if n > 1 else as_completed(futures)
+        for future in pbar:
+            idx, result = future.result()
+            results[idx] = result
+
+    with output_path.open("w", encoding="utf-8") as f:
+        f.write("\n\n".join(results) + "\n")
+
     log_info(f"Reformatted transcript saved to: {output_file}")
     return output_file

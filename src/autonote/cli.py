@@ -112,12 +112,13 @@ def setup_parser() -> argparse.ArgumentParser:
     reprocess_parser = subparsers.add_parser("reprocess", help="Selectively re-run pipeline steps on an existing meeting or batch of meetings")
     reprocess_parser.add_argument("file", nargs="?", help="Audio file (WAV or MP3) of a single meeting")
     reprocess_parser.add_argument("--since", metavar="DATE", help="Batch: reprocess all meetings on or after this date (YYYY-MM-DD or YYYYMMDD)")
+    reprocess_parser.add_argument("--until", metavar="DATE", help="Batch: reprocess all meetings on or before this date (YYYY-MM-DD or YYYYMMDD)")
     reprocess_parser.add_argument("--all", dest="all_meetings", action="store_true", help="Batch: reprocess all meetings in the recordings directory")
     reprocess_parser.add_argument("--reformat", action="store_true", help="Re-run LLM reformatting")
     reprocess_parser.add_argument("--summarize", action="store_true", help="Re-run LLM summarization")
     reprocess_parser.add_argument("--obsidian", action="store_true", help="Re-run Obsidian post-processing (vault copy, frontmatter, index)")
     reprocess_parser.add_argument("-m", "--model", help="LLM model or preset")
-    reprocess_parser.add_argument("--verbose", action="store_true", help="Show full logs during batch reprocessing (default: quiet)")
+    reprocess_parser.add_argument("--quiet", action="store_true", help="Hide logs during batch reprocessing (default: verbose)")
 
     # process
     process_parser = subparsers.add_parser("process", help="Process existing recording")
@@ -266,19 +267,22 @@ def cmd_obsidian(args):
     run_obsidian_postprocess(str(audio), formatted_file, summary_file)
 
 
-def _discover_audio_files(since_date: str | None = None) -> list:
+def _discover_audio_files(since_date: str | None = None, until_date: str | None = None) -> list:
     """Return sorted list of audio file paths from the recordings directory, optionally filtered by date."""
     import glob
     from pathlib import Path
 
     recordings_dir = config.get("RECORDINGS_DIR", str(Path.cwd() / "recordings"))
     since = since_date.replace("-", "") if since_date else None  # normalize to YYYYMMDD
+    until = until_date.replace("-", "") if until_date else None  # normalize to YYYYMMDD
 
     audio_files = []
     for date_dir in sorted(Path(recordings_dir).iterdir()):
         if not date_dir.is_dir() or not date_dir.name.isdigit() or len(date_dir.name) != 8:
             continue
         if since and date_dir.name < since:
+            continue
+        if until and date_dir.name > until:
             continue
         for meeting_dir in sorted(date_dir.iterdir()):
             if not meeting_dir.is_dir():
@@ -345,15 +349,15 @@ def cmd_reprocess(args):
             return
         _reprocess_single(str(audio), args.reformat, args.summarize, args.obsidian, args.model)
 
-    elif args.since or args.all_meetings:
+    elif args.since or args.until or args.all_meetings:
         from tqdm import tqdm
         from autonote.logger import set_quiet
-        audio_files = _discover_audio_files(since_date=args.since if args.since else None)
+        audio_files = _discover_audio_files(since_date=args.since, until_date=args.until)
         if not audio_files:
             log_error("No meetings found matching the criteria.")
             return
         log_info(f"Found {len(audio_files)} meeting(s) to reprocess.")
-        if not args.verbose:
+        if args.quiet:
             set_quiet(True)
         try:
             bar = tqdm(audio_files, desc="Reprocessing", unit="meeting", dynamic_ncols=True)
