@@ -56,13 +56,22 @@ def load_transcription(file_path: str) -> str:
         return path.read_text()
 
 def summarize_meeting(transcription: str, model: str, ollama_url: str, include_action_items: bool = True, source_file: str = None) -> dict:
-    log_info(f"Generating meeting summary using {model}...")
-    summary = query_llm(prompt=SUMMARY_PROMPT.format(transcription=transcription), model=model, api_base=ollama_url, source_file=source_file, stage="summarize")
-    result = {"summary": summary}
-    if include_action_items:
-        log_info("Extracting action items...")
-        action_items = query_llm(prompt=ACTION_ITEMS_PROMPT.format(transcription=transcription), model=model, api_base=ollama_url, source_file=source_file, stage="summarize_action_items")
-        result["action_items"] = action_items
+    from concurrent.futures import ThreadPoolExecutor
+    log_info(f"Generating summary and action items in parallel using {model}...")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_summary = executor.submit(
+            query_llm,
+            prompt=SUMMARY_PROMPT.format(transcription=transcription),
+            model=model, api_base=ollama_url, source_file=source_file, stage="summarize",
+        )
+        future_actions = executor.submit(
+            query_llm,
+            prompt=ACTION_ITEMS_PROMPT.format(transcription=transcription),
+            model=model, api_base=ollama_url, source_file=source_file, stage="summarize_action_items",
+        ) if include_action_items else None
+        result = {"summary": future_summary.result()}
+        if future_actions:
+            result["action_items"] = future_actions.result()
     return result
 
 def save_summary(result: dict, output_file: str, format: str):

@@ -84,17 +84,16 @@ def _patch_transcript_wikilink(summary_vault_path: Path, new_stem: str) -> None:
         log_error(f"Warning: could not patch transcript wikilink: {e}")
 
 
-def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file: str):
+def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file: str, extracted_meta: str | None = None):
     source_path = Path(source_file)
     base = source_path.stem.replace("_formatted", "")
     metadata_file = source_path.parent / f"{base}_metadata.json"
-    
+
     entities_file = config.get("ENTITIES_FILE", str(Path(__file__).parent.parent.parent.parent / "entities.yml"))
     vault_dir = config.get("VAULT_DIR", "")
     meeting_index = config.get("MEETING_INDEX", "")
 
-    extracted_meta = None
-    if formatted_file and Path(formatted_file).exists():
+    if extracted_meta is None and formatted_file and Path(formatted_file).exists():
         log_info("Obsidian: extracting meeting metadata...")
         try:
             extracted_meta = run_extract_metadata(formatted_file)
@@ -135,6 +134,8 @@ def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file
             log_error(f"Failed to update index: {e}")
 
     if vault_dir:
+        vault_subdir = config.get("VAULT_SUBDIR", "meetings")
+        vault_base = Path(vault_dir) / vault_subdir if vault_subdir else Path(vault_dir)
         file_for_path = formatted_file if formatted_file else summary_file
         if file_for_path:
             fp = Path(file_for_path)
@@ -148,10 +149,10 @@ def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file
                 raw_title = _resolve_vault_title(summary_file, time_part)
                 slug = _slugify(raw_title)
                 folder_name = f"{formatted_date} {slug}"
-                vault_dest = _find_unique_vault_dest(Path(vault_dir), folder_name)
+                vault_dest = _find_unique_vault_dest(vault_base, folder_name)
             else:
                 folder_name = ""
-                vault_dest = Path(vault_dir)
+                vault_dest = vault_base
 
             log_info(f"Obsidian: copying files to vault: {vault_dest}")
             os.makedirs(vault_dest, exist_ok=True)
@@ -215,11 +216,21 @@ def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=F
         formatted_file = run_reformat(transcription_file)
         summarize_input = formatted_file
 
-    log_info("Step: Generating summary...")
-    summary_file = run_summarize(summarize_input)
+    log_info("Step: Generating summary and extracting metadata in parallel...")
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_summary = executor.submit(run_summarize, summarize_input)
+        future_meta = executor.submit(run_extract_metadata, summarize_input) if (summarize_input and Path(summarize_input).exists()) else None
+        summary_file = future_summary.result()
+        extracted_meta = None
+        if future_meta:
+            try:
+                extracted_meta = future_meta.result()
+            except Exception as e:
+                log_error(f"Failed to extract metadata: {e}")
 
     log_info("Step: Obsidian post-processing...")
-    run_obsidian_postprocess(audio_file, formatted_file, summary_file)
+    run_obsidian_postprocess(audio_file, formatted_file, summary_file, extracted_meta=extracted_meta)
 
     if clean:
         log_info("Step: Removing all audio files...")
