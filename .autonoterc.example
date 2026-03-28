@@ -8,10 +8,18 @@ RECORDINGS_DIR="./recordings"
 WHISPER_MODEL="turbo"
 WHISPER_LANGUAGE="en"
 
-# Ollama settings for summary generation and raw transcript formatting
+# Ollama settings for local LLM models (legacy, still works)
 OLLAMA_MODEL="llama3.1:8b"
 OLLAMA_REFORMAT_MODEL="llama3.1:8b"
 OLLAMA_URL="http://localhost:11434"
+
+# Unified LLM Model (used for summarization, reformatting, metadata extraction)
+# Supports local Ollama models and cloud providers:
+# - Local: llama3.1:8b, mistral, etc. (automatically prefixed with ollama/)
+# - OpenAI: openai/gpt-4o, openai/gpt-4o-mini (requires OPENAI_API_KEY)
+# - Anthropic: anthropic/claude-3-5-sonnet-20240620 (requires ANTHROPIC_API_KEY)
+# - Gemini: gemini/gemini-1.5-flash (requires GEMINI_API_KEY)
+LLM_MODEL="ollama/llama3.1:8b"
 
 # Optional: Path to Obsidian vault to copy final outputs
 VAULT_DIR="/path/to/my/obisdian/vault"

@@ -17,6 +17,7 @@ recordings/
 # Configuration
 .autonoterc
 .env
+.envrc
 
 # Virtual Environments
 venv/

@@ -22,6 +22,7 @@ def get_config() -> dict:
     config["WHISPER_LANGUAGE"] = os.environ.get("WHISPER_LANGUAGE", "")
     config["OLLAMA_MODEL"] = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
     config["OLLAMA_REFORMAT_MODEL"] = os.environ.get("OLLAMA_REFORMAT_MODEL", "llama3.1:8b")
+    config["LLM_MODEL"] = os.environ.get("LLM_MODEL", config["OLLAMA_MODEL"])
     config["OLLAMA_URL"] = os.environ.get("OLLAMA_URL", "http://localhost:11434")
     config["DEBUG"] = os.environ.get("DEBUG", "false")
     config["VAULT_DIR"] = os.environ.get("VAULT_DIR", "")

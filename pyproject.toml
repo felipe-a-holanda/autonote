@@ -10,12 +10,19 @@ authors = [{ name = "Felipe" }]
 requires-python = ">=3.9"
 dependencies = [
     "faster-whisper",
-    "pyannote.audio",
     "requests",
     "tqdm",
     "python-dotenv",
     "pyyaml",
-    "rich"
+    "rich",
+    "litellm>=1.82.6",
+    "openai>=1.0.0",
+    "nvidia-cublas-cu12",
+]
+
+[project.optional-dependencies]
+diarize = [
+    "pyannote.audio",
 ]
 
 [project.scripts]

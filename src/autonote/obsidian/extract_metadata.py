@@ -1,13 +1,13 @@
 """
-Extracts structured metadata from a meeting transcript via Ollama.
+Extracts structured metadata from a meeting transcript via LLM.
 Outputs a JSON file with participants, topics, jira_tickets, and tags.
 """
 import json
 import re
-import requests
 from pathlib import Path
 from autonote.logger import log_info, log_error
 from autonote.config import config
+from autonote.llm import query_llm
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
@@ -36,13 +36,11 @@ def strip_frontmatter(text: str) -> str:
             return text[end + 4:].lstrip("\n")
     return text
 
-def query_ollama(prompt: str, model: str, ollama_url: str) -> str:
+def query_metadata(prompt: str, model: str, api_base: str) -> str:
     try:
-        response = requests.post(f"{ollama_url}/api/generate", json={"model": model, "prompt": prompt, "stream": False}, timeout=120)
-        response.raise_for_status()
-        return response.json()["response"]
-    except requests.exceptions.RequestException as e:
-        log_error(f"Warning: Ollama request failed: {e}")
+        return query_llm(prompt=prompt, model=model, api_base=api_base, timeout=120)
+    except Exception as e:
+        log_error(f"Warning: LLM request failed: {e}")
         return ""
 
 def parse_llm_json(raw: str) -> dict:
@@ -77,7 +75,7 @@ def run_extract_metadata(transcript_file: str, model: str = None, ollama_url: st
     regex_tickets = extract_jira_tickets(full_text)
     
     log_info(f"Extracting metadata using {_model}...")
-    raw = query_ollama(EXTRACTION_PROMPT.format(transcript=text), _model, _url)
+    raw = query_metadata(EXTRACTION_PROMPT.format(transcript=text), _model, _url)
     metadata = parse_llm_json(raw) if raw else {}
     
     for field in ("participants", "topics", "jira_tickets", "tags"):

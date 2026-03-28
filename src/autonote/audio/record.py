@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 import json
 from datetime import datetime
@@ -39,7 +40,7 @@ def record_audio(duration: int = None, output_file: str = None, title: str = "")
         
     log_info(f"Recording audio to {output_path}")
     
-    cmd = ["ffmpeg"]
+    cmd = ["ffmpeg", "-y"]
     if monitor_source:
         log_info("Mode: mic + system audio")
         mic_vol = config.get("MIC_VOLUME", "2.0")
@@ -59,17 +60,46 @@ def record_audio(duration: int = None, output_file: str = None, title: str = "")
     
     log_info("Press Ctrl+C to stop recording." if not duration else f"Recording for {duration} seconds.")
     
+    # Use Popen for proper signal handling — lets us send 'q' to ffmpeg
+    # for graceful shutdown so it finalizes the WAV headers.
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        # Prevent Python's default SIGINT handler from killing the child
+        preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN),
+    )
+    
     try:
-        subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
+        proc.wait()
     except KeyboardInterrupt:
-        pass # Expected early termination
-    except subprocess.CalledProcessError as e:
-        if not output_path.exists():
-            log_error(f"Recording failed: {e}")
-            return None
-            
-    if not output_path.exists():
-        log_error("Recording file was not created.")
+        # Send 'q' for graceful ffmpeg shutdown (finalizes WAV headers)
+        try:
+            proc.stdin.write(b"q")
+            proc.stdin.flush()
+        except (BrokenPipeError, OSError):
+            proc.terminate()
+        # Give ffmpeg time to finalize the file
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    
+    stderr_output = ""
+    try:
+        stderr_output = proc.stderr.read().decode(errors="replace")
+    except Exception:
+        pass
+    
+    if not output_path.exists() or output_path.stat().st_size <= 78:
+        # 78 bytes = empty WAV header with no audio data
+        log_error("Recording file was not created or is empty.")
+        if stderr_output:
+            # Show last few lines of ffmpeg stderr for debugging
+            lines = stderr_output.strip().splitlines()
+            for line in lines[-5:]:
+                log_error(f"  ffmpeg: {line}")
         return None
         
     log_success(f"Recording saved to {output_path}")
@@ -95,3 +125,6 @@ def record_audio(duration: int = None, output_file: str = None, title: str = "")
         json.dump(metadata, f, indent=2)
         
     return str(output_path)
+
+# Alias to match naming convention of other audio modules
+run_record = record_audio

@@ -7,15 +7,33 @@ Transcribes audio files to text with timestamps
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from autonote.logger import log_info, log_error
 
+# CTranslate2 (used by faster_whisper) needs CUDA libs that may be installed
+# as pip packages (e.g. nvidia-cublas-cu12) rather than system-wide.
+# Add their lib dirs to LD_LIBRARY_PATH before importing.
+def _setup_cuda_lib_paths():
+    site_packages = Path(__file__).resolve().parent.parent.parent.parent
+    nvidia_dir = site_packages / "nvidia"
+    if nvidia_dir.is_dir():
+        lib_dirs = [str(p) for p in nvidia_dir.glob("*/lib") if p.is_dir()]
+        if lib_dirs:
+            existing = os.environ.get("LD_LIBRARY_PATH", "")
+            os.environ["LD_LIBRARY_PATH"] = ":".join(lib_dirs + ([existing] if existing else []))
+
+_setup_cuda_lib_paths()
+
 try:
-    import whisper
-    import torch
-except ImportError:
-    pass # Managed by the orchestrator or handled later
+    from faster_whisper import WhisperModel
+except ImportError as e:
+    raise ImportError(
+        "faster-whisper is required for transcription. "
+        "Install it with: uv add faster-whisper"
+    ) from e
+
 
 
 def transcribe_audio(
@@ -40,33 +58,42 @@ def transcribe_audio(
     """
     # Determine device
     if device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"
 
-    log_info(f"Loading Whisper model: {model_size} on {device}")
-    model = whisper.load_model(model_size, device=device)
+    compute_type = "float16" if device == "cuda" else "int8"
+
+    log_info(f"Loading Whisper model: {model_size} on {device} ({compute_type})")
+    model = WhisperModel(model_size, device=device, compute_type=compute_type)
 
     log_info(f"Transcribing: {audio_file}")
-    result = model.transcribe(
+    segments_gen, info = model.transcribe(
         audio_file,
         language=language,
-        verbose=False
+        beam_size=5,
     )
 
-    log_info(f"Detected language: {result['language']}")
+    log_info(f"Detected language: {info.language} (probability: {info.language_probability:.2f})")
 
-    # Reformat segments to match our expected format
+    # Materialise the generator and reformat to our expected structure
     all_segments = []
-    for segment in result["segments"]:
+    full_text_parts = []
+    for segment in segments_gen:
+        text = segment.text.strip()
         all_segments.append({
-            "start": segment["start"],
-            "end": segment["end"],
-            "text": segment["text"].strip()
+            "start": segment.start,
+            "end": segment.end,
+            "text": text,
         })
+        full_text_parts.append(text)
 
     return {
-        "language": result["language"],
+        "language": info.language,
         "segments": all_segments,
-        "text": result["text"]
+        "text": " ".join(full_text_parts),
     }
 
 

@@ -1,6 +1,6 @@
 """
-Meeting summarization script using Ollama
-Takes transcription text and generates meeting notes, summaries, and action items
+Meeting summarization using LLM.
+Takes transcription text and generates meeting notes, summaries, and action items.
 """
 import json
 from pathlib import Path
@@ -12,45 +12,38 @@ try:
 except ImportError:
     pass
 
-SUMMARY_PROMPT = """You are an AI assistant that creates concise meeting summaries. Analyze the following meeting transcription and provide:
+from autonote.llm import query_llm
 
-1. **Meeting Summary**: A brief 2-3 sentence overview of the meeting
-2. **Key Discussion Points**: Bullet points of main topics discussed
-3. **Action Items**: Specific tasks or follow-ups identified (if any)
-4. **Decisions Made**: Key decisions or conclusions reached (if any)
-5. **Participants**: List any identifiable participants or speakers (if mentioned)
+SUMMARY_PROMPT = """You are an AI assistant that creates highly detailed and precise meeting summaries. Analyze the following meeting transcription and meticulously extract the following:
+
+1. **Meeting Summary**: A brief, specific 2-3 sentence overview that captures the true essence of the meeting (avoid generic filler).
+2. **Key Discussion Points**: Detailed bullet points of the main topics. Do not oversimplify. Explain *why* things were discussed.
+3. **Per-Person Updates (for standups/syncs)**: If this is a standup or multi-person update meeting, clearly separate what each participant is working on, their blockers, and their next steps. If not, omit this section.
+4. **Key Warnings & Things to Remember**: Explicitly list any risks, edge cases, technical caveats, or gotchas mentioned (e.g., "deploying to prod has no safeguards", "docs are outdated").
+5. **Decisions Made**: Key decisions or conclusions reached (if any).
+6. **Participants**: List all identifiable participants.
+
+Do NOT lose critical technical details, ticket numbers, or cross-person coordination context. Be specific.
 
 Transcription:
 {transcription}
 
 Please format your response in markdown."""
 
-ACTION_ITEMS_PROMPT = """Extract all action items and tasks from this meeting transcription. For each action item, identify:
-- The task/action
-- Who is responsible (if mentioned)
-- Any deadlines or timeframes (if mentioned)
+ACTION_ITEMS_PROMPT = """Extract all actionable tasks from this meeting transcription. Do not be vague.
+
+For each action item, identify:
+- The specific task/action (include ticket numbers if mentioned)
+- Who is responsible
+- Any deadlines, dependencies, or timeframes
+- Any important context (e.g., "Check with X before starting Y")
 
 Transcription:
 {transcription}
 
 Format as a markdown checklist with details."""
 
-def query_ollama(prompt: str, model: str, ollama_url: str) -> str:
-    try:
-        response = requests.post(
-            f"{ollama_url}/api/generate",
-            json={
-                "model": model,
-                "prompt": prompt,
-                "stream": False
-            },
-            timeout=300
-        )
-        response.raise_for_status()
-        return response.json()["response"]
-    except requests.exceptions.RequestException as e:
-        log_error(f"Error querying Ollama: {e}")
-        raise RuntimeError(f"Ollama query failed: {e}")
+# query_ollama has been replaced by query_llm from autonote.llm
 
 def load_transcription(file_path: str) -> str:
     path = Path(file_path)
@@ -64,11 +57,11 @@ def load_transcription(file_path: str) -> str:
 
 def summarize_meeting(transcription: str, model: str, ollama_url: str, include_action_items: bool = True) -> dict:
     log_info(f"Generating meeting summary using {model}...")
-    summary = query_ollama(SUMMARY_PROMPT.format(transcription=transcription), model=model, ollama_url=ollama_url)
+    summary = query_llm(prompt=SUMMARY_PROMPT.format(transcription=transcription), model=model, api_base=ollama_url)
     result = {"summary": summary}
     if include_action_items:
         log_info("Extracting action items...")
-        action_items = query_ollama(ACTION_ITEMS_PROMPT.format(transcription=transcription), model=model, ollama_url=ollama_url)
+        action_items = query_llm(prompt=ACTION_ITEMS_PROMPT.format(transcription=transcription), model=model, api_base=ollama_url)
         result["action_items"] = action_items
     return result
 

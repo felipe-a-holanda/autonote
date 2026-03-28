@@ -7,10 +7,6 @@ from autonote.config import config
 
 from autonote.audio.record import run_record
 from autonote.audio.transcribe import transcribe_audio, save_transcription
-from autonote.audio.diarize import run_diarize
-from autonote.audio.merge_diarization import run_merge
-from autonote.audio.label import run_label
-from autonote.audio.apply_labels import run_apply_labels
 from autonote.audio.reformat import run_reformat
 from autonote.audio.summarize import run_summarize
 from autonote.audio.compress import compress_audio
@@ -98,6 +94,14 @@ def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=F
         return
 
     if diarize:
+        try:
+            from autonote.audio.diarize import run_diarize
+            from autonote.audio.merge_diarization import run_merge
+            from autonote.audio.label import run_label
+            from autonote.audio.apply_labels import run_apply_labels
+        except ImportError:
+            log_error("Diarization requires pyannote.audio. Install with: uv sync --extra diarize")
+            return
         log_info("Step 2: Identifying speakers...")
         speakers_file = run_diarize(audio_file, speakers=kwargs.get("speakers"))
         
