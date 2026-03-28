@@ -55,13 +55,13 @@ def load_transcription(file_path: str) -> str:
     else:
         return path.read_text()
 
-def summarize_meeting(transcription: str, model: str, ollama_url: str, include_action_items: bool = True) -> dict:
+def summarize_meeting(transcription: str, model: str, ollama_url: str, include_action_items: bool = True, source_file: str = None) -> dict:
     log_info(f"Generating meeting summary using {model}...")
-    summary = query_llm(prompt=SUMMARY_PROMPT.format(transcription=transcription), model=model, api_base=ollama_url)
+    summary = query_llm(prompt=SUMMARY_PROMPT.format(transcription=transcription), model=model, api_base=ollama_url, source_file=source_file, stage="summarize")
     result = {"summary": summary}
     if include_action_items:
         log_info("Extracting action items...")
-        action_items = query_llm(prompt=ACTION_ITEMS_PROMPT.format(transcription=transcription), model=model, api_base=ollama_url)
+        action_items = query_llm(prompt=ACTION_ITEMS_PROMPT.format(transcription=transcription), model=model, api_base=ollama_url, source_file=source_file, stage="summarize_action_items")
         result["action_items"] = action_items
     return result
 
@@ -91,7 +91,7 @@ def run_summarize(transcription_file: str, model: str = None, ollama_url: str = 
         base_stem = _re.sub(r"_formatted$", "", trans_path.stem)
         output_file = str(trans_path.with_name(f"{base_stem}_summary{suffix}"))
         
-    result = summarize_meeting(transcription, model=model, ollama_url=ollama_url, include_action_items=not skip_action_items)
+    result = summarize_meeting(transcription, model=model, ollama_url=ollama_url, include_action_items=not skip_action_items, source_file=transcription_file)
     save_summary(result, output_file, format)
     log_info("Summarization complete!")
     return output_file

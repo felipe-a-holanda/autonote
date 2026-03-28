@@ -26,12 +26,12 @@ SYSTEM_PROMPT = """You are a professional transcript editor. Your ONLY job is to
 Do NOT rewrite sentences. Do NOT add commentary. Do NOT summarize or shorten the content.
 Return ONLY the cleaned, full-length transcript. No preamble."""
 
-def query_reformat(transcription: str, model: str, api_base: str) -> str:
+def query_reformat(transcription: str, model: str, api_base: str, source_file: str = None) -> str:
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Raw transcription:\n{transcription}\n\nCRITICAL: Output the ENTIRE transcript reformatted. DO NOT SUMMARIZE. DO NOT SHORTEN."}
     ]
-    return query_llm(messages=messages, model=model, api_base=api_base, timeout=1800)
+    return query_llm(messages=messages, model=model, api_base=api_base, timeout=1800, source_file=source_file, stage="reformat")
 
 def chunk_transcription(text: str, max_words: int = 400) -> list[str]:
     words = text.split()
@@ -81,7 +81,7 @@ def run_reformat(transcription_file: str, model: str = None, ollama_url: str = N
     output_path.write_text("")
     
     for chunk in tqdm(chunks, desc=f"Reformatting ({model})", unit="chunk", dynamic_ncols=True):
-        result = query_reformat(chunk, model=model, api_base=ollama_url)
+        result = query_reformat(chunk, model=model, api_base=ollama_url, source_file=transcription_file)
         
         result = result.strip()
         result = re.sub(r"^(?:Here is|Here's).*?(?:transcript|text)?.*?:?\s*\n+", "", result, flags=re.IGNORECASE).strip()

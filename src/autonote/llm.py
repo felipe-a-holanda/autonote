@@ -1,5 +1,10 @@
 import os
+import json
+import re
+import time
 import litellm
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from autonote.logger import log_error, log_info
 from autonote.config import config
@@ -15,11 +20,80 @@ LLM_PRESETS = {
     "smart": config.get("PRESET_SMART", "anthropic/claude-sonnet-4-6"),
 }
 
+def _recording_base(source_file: str) -> tuple[Path, str]:
+    """Return (recording_dir, base_stem) stripping known pipeline suffixes."""
+    p = Path(source_file)
+    stem = re.sub(r"(_formatted|_summary|_extracted_metadata)$", "", p.stem)
+    return p.parent, stem
+
+
+def _append_cost_log(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    cost_usd: float,
+    cost_brl: Optional[float],
+    source_file: Optional[str] = None,
+    stage: Optional[str] = None,
+    duration_s: Optional[float] = None,
+) -> None:
+    ts = datetime.now(timezone.utc).isoformat()
+    entry: Dict[str, Any] = {
+        "ts": ts,
+        "stage": stage,
+        "model": model,
+        "source_file": source_file,
+        "duration_s": round(duration_s, 2) if duration_s is not None else None,
+        "tokens_in": prompt_tokens,
+        "tokens_out": completion_tokens,
+        "tokens_total": total_tokens,
+        "cost_usd": round(cost_usd, 8),
+        "cost_brl": round(cost_brl, 6) if cost_brl is not None else None,
+    }
+
+    # Global JSONL log
+    log_path = config.get("LLM_COST_LOG", "")
+    if log_path:
+        recording_dir = str(_recording_base(source_file)[0]) if source_file else None
+        global_entry = {**entry, "recording_dir": recording_dir}
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps(global_entry) + "\n")
+        except Exception as e:
+            log_error(f"Failed to write cost log: {e}")
+
+    # Per-recording cost file
+    if source_file:
+        _write_recording_cost(entry, source_file)
+
+
+def _write_recording_cost(entry: Dict[str, Any], source_file: str) -> None:
+    """Append a cost entry to the per-recording _llm_costs.json file."""
+    recording_dir, base = _recording_base(source_file)
+    cost_file = recording_dir / f"{base}_llm_costs.json"
+    existing: list = []
+    if cost_file.exists():
+        try:
+            existing = json.loads(cost_file.read_text(encoding="utf-8"))
+        except Exception:
+            existing = []
+    # Strip source_file from per-recording entry (redundant there)
+    rec_entry = {k: v for k, v in entry.items() if k != "source_file"}
+    existing.append(rec_entry)
+    try:
+        cost_file.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        log_error(f"Failed to write recording cost file: {e}")
+
+
 def query_llm(
-    prompt: Optional[str] = None, 
+    prompt: Optional[str] = None,
     messages: Optional[List[Dict[str, str]]] = None,
-    model: Optional[str] = None, 
+    model: Optional[str] = None,
     api_base: Optional[str] = None,
+    source_file: Optional[str] = None,
+    stage: Optional[str] = None,
     **kwargs: Any
 ) -> str:
     """
@@ -61,6 +135,7 @@ def query_llm(
 
     try:
         log_info(f"Querying LLM provider for model: {model}")
+        _t0 = time.monotonic()
         response = litellm.completion(
             model=model,
             messages=messages,
@@ -69,6 +144,7 @@ def query_llm(
             timeout=kwargs.pop("timeout", 300),
             **kwargs
         )
+        duration_s = time.monotonic() - _t0
 
         # Log usage and cost
         usage = getattr(response, "usage", None)
@@ -82,10 +158,11 @@ def query_llm(
                 prompt_t = getattr(usage, "prompt_tokens", 0)
                 completion_t = getattr(usage, "completion_tokens", 0)
                 total_t = getattr(usage, "total_tokens", 0)
-            
+
             try:
                 cost = litellm.completion_cost(completion_response=response)
                 cost_str = ""
+                brl_cost: Optional[float] = None
                 if cost > 0:
                     try:
                         usd_to_brl = float(config.get("USD_TO_BRL", "5.50"))
@@ -96,10 +173,12 @@ def query_llm(
                 elif not model.startswith("ollama/"):
                     cost_str = " (cost unknown — model not in litellm pricing DB)"
 
-                log_info(f"LLM Usage: {total_t} tokens (In: {prompt_t}, Out: {completion_t}){cost_str}")
+                log_info(f"LLM Usage: {total_t} tokens (In: {prompt_t}, Out: {completion_t}){cost_str} [{duration_s:.1f}s]")
+                _append_cost_log(model, prompt_t, completion_t, total_t, cost, brl_cost, source_file, stage, duration_s)
             except Exception:
                 # Fallback if cost calculation fails (e.g. unknown local model)
-                log_info(f"LLM Usage: {total_t} tokens (In: {prompt_t}, Out: {completion_t})")
+                log_info(f"LLM Usage: {total_t} tokens (In: {prompt_t}, Out: {completion_t}) [{duration_s:.1f}s]")
+                _append_cost_log(model, prompt_t, completion_t, total_t, 0.0, None, source_file, stage, duration_s)
 
         return response.choices[0].message.content
     except Exception as e:

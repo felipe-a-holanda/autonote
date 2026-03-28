@@ -36,9 +36,9 @@ def strip_frontmatter(text: str) -> str:
             return text[end + 4:].lstrip("\n")
     return text
 
-def query_metadata(prompt: str, model: str, api_base: str) -> str:
+def query_metadata(prompt: str, model: str, api_base: str, source_file: str = None) -> str:
     try:
-        return query_llm(prompt=prompt, model=model, api_base=api_base, timeout=120)
+        return query_llm(prompt=prompt, model=model, api_base=api_base, timeout=120, source_file=source_file, stage="extract_metadata")
     except Exception as e:
         log_error(f"Warning: LLM request failed: {e}")
         return ""
@@ -75,7 +75,7 @@ def run_extract_metadata(transcript_file: str, model: str = None, ollama_url: st
     regex_tickets = extract_jira_tickets(full_text)
     
     log_info(f"Extracting metadata using {_model}...")
-    raw = query_metadata(EXTRACTION_PROMPT.format(transcript=text), _model, _url)
+    raw = query_metadata(EXTRACTION_PROMPT.format(transcript=text), _model, _url, source_file=transcript_file)
     metadata = parse_llm_json(raw) if raw else {}
     
     for field in ("participants", "topics", "jira_tickets", "tags"):

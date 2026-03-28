@@ -31,6 +31,7 @@ def get_config() -> dict:
     config["MIC_VOLUME"] = os.environ.get("MIC_VOLUME", "2.0")
     config["MIC_SOURCE"] = os.environ.get("MIC_SOURCE", "")
     config["SYSTEM_SOURCE"] = os.environ.get("SYSTEM_SOURCE", "")
+    config["LLM_COST_LOG"] = os.environ.get("LLM_COST_LOG", os.path.expanduser("~/.autonote_costs.jsonl"))
     
     # Simple FX rate logic
     fx_rate = os.environ.get("USD_TO_BRL")
