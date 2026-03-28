@@ -14,7 +14,7 @@ litellm.telemetry = False
 
 # Default presets for LLM models
 LLM_PRESETS = {
-    "local": config.get("PRESET_LOCAL", f"ollama/{DEFAULT_MODEL}"),
+    "local": config.get("PRESET_LOCAL", DEFAULT_MODEL),
     "cheap": config.get("PRESET_CHEAP", "deepseek/deepseek-chat"),
     "fast": config.get("PRESET_FAST", "openai/gpt-5.4"),
     "smart": config.get("PRESET_SMART", "anthropic/claude-sonnet-4-6"),
@@ -88,11 +88,15 @@ def _write_recording_cost(entry: Dict[str, Any], source_file: str) -> None:
 
 
 def resolve_model(model: str) -> str:
-    """Resolve a preset name or bare model name to a fully-qualified model string."""
+    """Resolve a preset name or bare model name to a fully-qualified model string.
+    
+    All models should be fully-qualified with a provider prefix (e.g. 'ollama/llama3.1:8b',
+    'openai/gpt-4o'). Any bare name without a '/' is assumed to be a local Ollama model.
+    """
     model = model or config.get("MODEL", DEFAULT_MODEL)
     if model in LLM_PRESETS:
         model = LLM_PRESETS[model]
-    if "/" not in model and not model.startswith("gpt-") and not model.startswith("claude-"):
+    if "/" not in model:
         model = f"ollama/{model}"
     return model
 

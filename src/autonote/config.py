@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-DEFAULT_MODEL = "llama3.1:8b"
+DEFAULT_MODEL = "ollama/llama3.1:8b"
 
 def get_config() -> dict:
     """Builds the comprehensive configuration dict using python-dotenv."""
