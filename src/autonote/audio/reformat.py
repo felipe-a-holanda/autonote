@@ -14,7 +14,8 @@ try:
 except ImportError:
     pass
 
-from autonote.llm import query_llm
+from autonote.llm import query_llm, resolve_model
+from autonote.config import DEFAULT_MODEL
 
 SYSTEM_PROMPT = """You are a professional transcript editor. Your ONLY job is to lightly clean up raw speech-to-text transcription:
 
@@ -63,7 +64,7 @@ def load_transcription(file_path: str) -> str:
         return path.read_text()
 
 def run_reformat(transcription_file: str, model: str = None, ollama_url: str = None, output_file: str = None):
-    model = model or config.get("OLLAMA_REFORMAT_MODEL", config.get("OLLAMA_MODEL", "llama3.1:8b"))
+    model = model or config.get("MODEL_REFORMAT", DEFAULT_MODEL)
     ollama_url = ollama_url or config.get("OLLAMA_URL", "http://localhost:11434")
     
     transcription = load_transcription(transcription_file)
@@ -74,8 +75,13 @@ def run_reformat(transcription_file: str, model: str = None, ollama_url: str = N
         trans_path = Path(transcription_file)
         output_file = str(trans_path.with_name(f"{trans_path.stem}_formatted.md"))
         
-    chunks = chunk_transcription(transcription, max_words=500)
-    log_info(f"Split transcription into {len(chunks)} chunks.")
+    resolved = resolve_model(model)
+    if resolved.startswith("ollama/"):
+        chunks = chunk_transcription(transcription, max_words=500)
+        log_info(f"Split transcription into {len(chunks)} chunks.")
+    else:
+        chunks = [transcription]
+        log_info("API model detected — sending full transcript in one request.")
     
     output_path = Path(output_file)
     output_path.write_text("")

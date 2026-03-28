@@ -5,7 +5,7 @@ Takes transcription text and generates meeting notes, summaries, and action item
 import json
 from pathlib import Path
 from autonote.logger import log_info, log_error
-from autonote.config import config
+from autonote.config import config, DEFAULT_MODEL
 
 try:
     import requests
@@ -77,7 +77,7 @@ def save_summary(result: dict, output_file: str, format: str):
     log_info(f"Summary saved to: {output_path}")
 
 def run_summarize(transcription_file: str, model: str = None, ollama_url: str = None, format: str = "md", output_file: str = None, skip_action_items: bool = False):
-    model = model or config.get("OLLAMA_MODEL", "llama3.1:8b")
+    model = model or config.get("MODEL_SUMMARIZE", DEFAULT_MODEL)
     ollama_url = ollama_url or config.get("OLLAMA_URL", "http://localhost:11434")
     
     transcription = load_transcription(transcription_file)

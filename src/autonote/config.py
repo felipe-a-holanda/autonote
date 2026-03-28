@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 
+DEFAULT_MODEL = "llama3.1:8b"
+
 def get_config() -> dict:
     """Builds the comprehensive configuration dict using python-dotenv."""
     
@@ -20,9 +22,11 @@ def get_config() -> dict:
     config["RECORDINGS_DIR"] = os.environ.get("RECORDINGS_DIR", os.path.abspath("./recordings"))
     config["WHISPER_MODEL"] = os.environ.get("WHISPER_MODEL", "turbo")
     config["WHISPER_LANGUAGE"] = os.environ.get("WHISPER_LANGUAGE", "")
-    config["OLLAMA_MODEL"] = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
-    config["OLLAMA_REFORMAT_MODEL"] = os.environ.get("OLLAMA_REFORMAT_MODEL", "llama3.1:8b")
-    config["LLM_MODEL"] = os.environ.get("LLM_MODEL", config["OLLAMA_MODEL"])
+    _default_model = os.environ.get("MODEL", os.environ.get("LLM_MODEL", os.environ.get("OLLAMA_MODEL", DEFAULT_MODEL)))
+    config["MODEL"] = _default_model
+    config["MODEL_REFORMAT"] = os.environ.get("MODEL_REFORMAT", _default_model)
+    config["MODEL_SUMMARIZE"] = os.environ.get("MODEL_SUMMARIZE", _default_model)
+    config["MODEL_METADATA"] = os.environ.get("MODEL_METADATA", _default_model)
     config["OLLAMA_URL"] = os.environ.get("OLLAMA_URL", "http://localhost:11434")
     config["DEBUG"] = os.environ.get("DEBUG", "false")
     config["VAULT_DIR"] = os.environ.get("VAULT_DIR", "")

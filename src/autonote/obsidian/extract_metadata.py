@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 from autonote.logger import log_info, log_error
-from autonote.config import config
+from autonote.config import config, DEFAULT_MODEL
 from autonote.llm import query_llm
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
@@ -57,7 +57,7 @@ def parse_llm_json(raw: str) -> dict:
     return {}
 
 def run_extract_metadata(transcript_file: str, model: str = None, ollama_url: str = None, output: str = None):
-    _model = model or config.get("OLLAMA_MODEL", "llama3.1:8b")
+    _model = model or config.get("MODEL_METADATA", DEFAULT_MODEL)
     _url = ollama_url or config.get("OLLAMA_URL", DEFAULT_OLLAMA_URL)
     
     file_path = Path(transcript_file)

@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from autonote.logger import log_error, log_info
-from autonote.config import config
+from autonote.config import config, DEFAULT_MODEL
 
 # Turn off litellm telemetry and set reasonable defaults
 litellm.telemetry = False
 
 # Default presets for LLM models
 LLM_PRESETS = {
-    "local": config.get("PRESET_LOCAL", "ollama/llama3.1:8b"),
+    "local": config.get("PRESET_LOCAL", f"ollama/{DEFAULT_MODEL}"),
     "cheap": config.get("PRESET_CHEAP", "deepseek/deepseek-chat"),
     "fast": config.get("PRESET_FAST", "openai/gpt-5.4"),
     "smart": config.get("PRESET_SMART", "anthropic/claude-sonnet-4-6"),
@@ -87,6 +87,16 @@ def _write_recording_cost(entry: Dict[str, Any], source_file: str) -> None:
         log_error(f"Failed to write recording cost file: {e}")
 
 
+def resolve_model(model: str) -> str:
+    """Resolve a preset name or bare model name to a fully-qualified model string."""
+    model = model or config.get("MODEL", DEFAULT_MODEL)
+    if model in LLM_PRESETS:
+        model = LLM_PRESETS[model]
+    if "/" not in model and not model.startswith("gpt-") and not model.startswith("claude-"):
+        model = f"ollama/{model}"
+    return model
+
+
 def query_llm(
     prompt: Optional[str] = None,
     messages: Optional[List[Dict[str, str]]] = None,
@@ -113,17 +123,10 @@ def query_llm(
             raise ValueError("Must provide either prompt or messages")
         messages = [{"role": "user", "content": prompt}]
         
-    model = model or config.get("LLM_MODEL", config.get("OLLAMA_MODEL", "llama3.1:8b"))
-    
-    # Check for presets
-    if model in LLM_PRESETS:
-        log_info(f"Using LLM preset: {model} -> {LLM_PRESETS[model]}")
-        model = LLM_PRESETS[model]
-    
-    # If the user just specified a model name like 'llama3.1:8b', we assume Ollama for backward compatibility
-    # unless it explicitly has a provider prefix like 'openai/' or 'anthropic/'.
-    if "/" not in model and not model.startswith("gpt-") and not model.startswith("claude-"):
-        model = f"ollama/{model}"
+    resolved = resolve_model(model or config.get("MODEL", DEFAULT_MODEL))
+    if resolved != (model or config.get("MODEL", DEFAULT_MODEL)):
+        log_info(f"Using LLM preset: {model} -> {resolved}")
+    model = resolved
         
     ollama_url = config.get("OLLAMA_URL", "http://localhost:11434")
     if model.startswith("ollama/"):
