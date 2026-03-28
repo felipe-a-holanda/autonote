@@ -75,7 +75,7 @@ def run_extract_metadata(transcript_file: str, model: str = None, ollama_url: st
     regex_tickets = extract_jira_tickets(full_text)
     
     log_info(f"Extracting metadata using {_model}...")
-    raw = query_metadata(EXTRACTION_PROMPT.format(transcript=text), _model, _url, source_file=transcript_file)
+    raw = query_metadata(EXTRACTION_PROMPT.replace("{transcript}", text), _model, _url, source_file=transcript_file)
     metadata = parse_llm_json(raw) if raw else {}
     
     for field in ("participants", "topics", "jira_tickets", "tags"):
