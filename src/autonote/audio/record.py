@@ -9,14 +9,27 @@ from autonote.config import config
 
 def get_pactl_sources():
     try:
-        default_source = subprocess.check_output(["pactl", "get-default-source"]).decode().strip()
-        default_sink = subprocess.check_output(["pactl", "get-default-sink"]).decode().strip()
-        monitor_source = f"{default_sink}.monitor"
+        mic_source = config.get("MIC_SOURCE", "").strip()
+        system_source = config.get("SYSTEM_SOURCE", "").strip()
         
-        sources_list = subprocess.check_output(["pactl", "list", "sources", "short"]).decode()
-        has_monitor = monitor_source in sources_list
+        if mic_source:
+            default_source = mic_source
+            log_info(f"Using custom MIC_SOURCE: {mic_source}")
+        else:
+            default_source = subprocess.check_output(["pactl", "get-default-source"]).decode().strip()
         
-        return default_source, monitor_source if has_monitor else None
+        if system_source:
+            monitor_source = system_source
+            log_info(f"Using custom SYSTEM_SOURCE: {system_source}")
+        else:
+            default_sink = subprocess.check_output(["pactl", "get-default-sink"]).decode().strip()
+            monitor_source = f"{default_sink}.monitor"
+            
+            sources_list = subprocess.check_output(["pactl", "list", "sources", "short"]).decode()
+            has_monitor = monitor_source in sources_list
+            monitor_source = monitor_source if has_monitor else None
+        
+        return default_source, monitor_source
     except subprocess.CalledProcessError:
         raise RuntimeError("Failed to query pactl for audio sources. Ensure pulseaudio-utils is installed.")
         
@@ -65,7 +78,6 @@ def record_audio(duration: int = None, output_file: str = None, title: str = "")
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
-        stderr=subprocess.PIPE,
         # Prevent Python's default SIGINT handler from killing the child
         preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN),
     )
@@ -85,21 +97,10 @@ def record_audio(duration: int = None, output_file: str = None, title: str = "")
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
-    
-    stderr_output = ""
-    try:
-        stderr_output = proc.stderr.read().decode(errors="replace")
-    except Exception:
-        pass
-    
+            
     if not output_path.exists() or output_path.stat().st_size <= 78:
         # 78 bytes = empty WAV header with no audio data
-        log_error("Recording file was not created or is empty.")
-        if stderr_output:
-            # Show last few lines of ffmpeg stderr for debugging
-            lines = stderr_output.strip().splitlines()
-            for line in lines[-5:]:
-                log_error(f"  ffmpeg: {line}")
+        log_error("Recording file was not created or is empty. Please check the ffmpeg output above for details.")
         return None
         
     log_success(f"Recording saved to {output_path}")
