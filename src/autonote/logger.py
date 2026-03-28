@@ -13,11 +13,19 @@ custom_theme = Theme({
 
 console = Console(stderr=True, theme=custom_theme)
 
+_quiet = False
+
+def set_quiet(value: bool) -> None:
+    global _quiet
+    _quiet = value
+
 def log_info(msg: str):
-    console.print(f"[info][INFO][/info] {msg}")
+    if not _quiet:
+        console.print(f"[info][INFO][/info] {msg}")
 
 def log_success(msg: str):
-    console.print(f"[success][SUCCESS][/success] {msg}")
+    if not _quiet:
+        console.print(f"[success][SUCCESS][/success] {msg}")
 
 def log_error(msg: str):
     console.print(f"[error][ERROR][/error] {msg}")

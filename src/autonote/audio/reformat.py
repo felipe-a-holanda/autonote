@@ -86,7 +86,8 @@ def run_reformat(transcription_file: str, model: str = None, ollama_url: str = N
     output_path = Path(output_file)
     output_path.write_text("")
     
-    for chunk in tqdm(chunks, desc=f"Reformatting ({model})", unit="chunk", dynamic_ncols=True):
+    chunk_iter = tqdm(chunks, desc=f"Reformatting ({model})", unit="chunk", dynamic_ncols=True) if len(chunks) > 1 else chunks
+    for chunk in chunk_iter:
         result = query_reformat(chunk, model=model, api_base=ollama_url, source_file=transcription_file)
         
         result = result.strip()

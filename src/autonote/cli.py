@@ -117,6 +117,7 @@ def setup_parser() -> argparse.ArgumentParser:
     reprocess_parser.add_argument("--summarize", action="store_true", help="Re-run LLM summarization")
     reprocess_parser.add_argument("--obsidian", action="store_true", help="Re-run Obsidian post-processing (vault copy, frontmatter, index)")
     reprocess_parser.add_argument("-m", "--model", help="LLM model or preset")
+    reprocess_parser.add_argument("--verbose", action="store_true", help="Show full logs during batch reprocessing (default: quiet)")
 
     # process
     process_parser = subparsers.add_parser("process", help="Process existing recording")
@@ -345,14 +346,23 @@ def cmd_reprocess(args):
         _reprocess_single(str(audio), args.reformat, args.summarize, args.obsidian, args.model)
 
     elif args.since or args.all_meetings:
+        from tqdm import tqdm
+        from autonote.logger import set_quiet
         audio_files = _discover_audio_files(since_date=args.since if args.since else None)
         if not audio_files:
             log_error("No meetings found matching the criteria.")
             return
         log_info(f"Found {len(audio_files)} meeting(s) to reprocess.")
-        for audio_path in audio_files:
-            log_info(f"--- {Path(audio_path).parent.name} ---")
-            _reprocess_single(audio_path, args.reformat, args.summarize, args.obsidian, args.model)
+        if not args.verbose:
+            set_quiet(True)
+        try:
+            bar = tqdm(audio_files, desc="Reprocessing", unit="meeting", dynamic_ncols=True)
+            for audio_path in bar:
+                name = Path(audio_path).parent.name
+                bar.set_postfix_str(name)
+                _reprocess_single(audio_path, args.reformat, args.summarize, args.obsidian, args.model)
+        finally:
+            set_quiet(False)
 
     else:
         log_error("Provide a file, --since DATE, or --all")
