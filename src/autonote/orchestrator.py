@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import glob
 from pathlib import Path
@@ -14,6 +15,74 @@ from autonote.obsidian.extract_metadata import run_extract_metadata
 from autonote.obsidian.frontmatter import run_frontmatter
 from autonote.obsidian.wikilink import run_wikilinks
 from autonote.obsidian.update_index import run_update_index
+
+def _slugify(title: str, max_len: int = 60) -> str:
+    s = title.strip().replace("/", "-").replace("\\", "-").replace("\x00", "")
+    s = re.sub(r'[:\*\?"<>\|]', "", s)
+    s = re.sub(r"[\s\-]+", " ", s).strip()
+    if len(s) > max_len:
+        s = s[:max_len].rsplit(" ", 1)[0].strip()
+    return s or "meeting"
+
+
+def _resolve_vault_title(summary_file: str | None, time: str) -> str:
+    """
+    Title priority:
+    1. First non-boilerplate heading in summary body (LLM-inferred)
+    2. User-provided recording name (frontmatter title) as fallback
+    When both are present, appends the user tag: "LLM Title - user-tag"
+    """
+    BOILERPLATE = {"meeting summary", "action items", "summary"}
+    if summary_file:
+        path = Path(summary_file)
+        if path.exists():
+            from autonote.obsidian.frontmatter import parse_existing_frontmatter
+            content = path.read_text(encoding="utf-8")
+            fm, body = parse_existing_frontmatter(content)
+            user_tag = (fm.get("title") or "").strip()
+            inferred = ""
+            for line in body.splitlines():
+                m = re.match(r"^#{1,3} (.+)", line)
+                if m:
+                    heading = m.group(1).strip()
+                    if heading.lower() not in BOILERPLATE:
+                        inferred = heading
+                        break
+            if inferred and user_tag:
+                return f"{inferred} - {user_tag}"
+            if inferred:
+                return inferred
+            if user_tag:
+                return user_tag
+    return time
+
+
+def _find_unique_vault_dest(vault_dir: Path, folder_name: str) -> Path:
+    candidate = vault_dir / folder_name
+    if not candidate.exists():
+        return candidate
+    n = 2
+    while True:
+        candidate = vault_dir / f"{folder_name} ({n})"
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def _patch_transcript_wikilink(summary_vault_path: Path, new_stem: str) -> None:
+    try:
+        content = summary_vault_path.read_text(encoding="utf-8")
+        patched = re.sub(
+            r"^(transcript:\s*)'?\[\[.*?\]\]'?",
+            f"transcript: '[[{new_stem}]]'",
+            content,
+            flags=re.MULTILINE,
+        )
+        if patched != content:
+            summary_vault_path.write_text(patched, encoding="utf-8")
+    except Exception as e:
+        log_error(f"Warning: could not patch transcript wikilink: {e}")
+
 
 def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file: str):
     source_path = Path(source_file)
@@ -71,21 +140,36 @@ def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file
             fp = Path(file_for_path)
             meeting_dir_name = fp.parent.name
             date_dir_name = fp.parent.parent.name
-            
-            meeting_subdir = ""
-            if len(date_dir_name) == 8 and date_dir_name.isdigit() and meeting_dir_name.startswith("meeting_"):
-                formatted_date = f"{date_dir_name[:4]}-{date_dir_name[4:6]}-{date_dir_name[6:]}"
-                meeting_subdir = f"{formatted_date}/{meeting_dir_name}"
-            
-            vault_dest = Path(vault_dir) / meeting_subdir if meeting_subdir else Path(vault_dir)
+
+            if (len(date_dir_name) == 8 and date_dir_name.isdigit()
+                    and meeting_dir_name.startswith("meeting_")):
+                from autonote.obsidian.frontmatter import parse_timestamp_from_filename
+                formatted_date, time_part = parse_timestamp_from_filename(meeting_dir_name)
+                raw_title = _resolve_vault_title(summary_file, time_part)
+                slug = _slugify(raw_title)
+                folder_name = f"{formatted_date} {slug}"
+                vault_dest = _find_unique_vault_dest(Path(vault_dir), folder_name)
+            else:
+                folder_name = ""
+                vault_dest = Path(vault_dir)
+
             log_info(f"Obsidian: copying files to vault: {vault_dest}")
             os.makedirs(vault_dest, exist_ok=True)
+
+            transcript_stem = f"{folder_name} - transcript" if folder_name else (Path(formatted_file).stem if formatted_file else "transcript")
+            summary_stem = folder_name if folder_name else (Path(summary_file).stem if summary_file else "summary")
+
             if formatted_file and Path(formatted_file).exists():
-                shutil.copy(formatted_file, vault_dest)
-                log_success(f"Vault: {meeting_subdir + '/' if meeting_subdir else ''}{Path(formatted_file).name}")
+                dest = vault_dest / f"{transcript_stem}.md"
+                shutil.copy(formatted_file, dest)
+                log_success(f"Vault: {dest.relative_to(Path(vault_dir))}")
+
             if summary_file and Path(summary_file).exists():
-                shutil.copy(summary_file, vault_dest)
-                log_success(f"Vault: {meeting_subdir + '/' if meeting_subdir else ''}{Path(summary_file).name}")
+                dest = vault_dest / f"{summary_stem}.md"
+                shutil.copy(summary_file, dest)
+                if folder_name:
+                    _patch_transcript_wikilink(dest, transcript_stem)
+                log_success(f"Vault: {dest.relative_to(Path(vault_dir))}")
 
 
 def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=False, keep_wav=False, clean=False, **kwargs):

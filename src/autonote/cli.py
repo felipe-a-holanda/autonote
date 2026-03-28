@@ -104,6 +104,20 @@ def setup_parser() -> argparse.ArgumentParser:
     index_parser.add_argument("summary_file", help="Path to _summary.md file")
     index_parser.add_argument("--index", required=True, help="Path to Meetings.md index file")
 
+    # obsidian
+    obsidian_parser = subparsers.add_parser("obsidian", help="Run Obsidian post-processing on an existing meeting (vault copy, frontmatter, index)")
+    obsidian_parser.add_argument("file", help="Audio file (WAV or MP3) of the meeting")
+
+    # reprocess
+    reprocess_parser = subparsers.add_parser("reprocess", help="Selectively re-run pipeline steps on an existing meeting or batch of meetings")
+    reprocess_parser.add_argument("file", nargs="?", help="Audio file (WAV or MP3) of a single meeting")
+    reprocess_parser.add_argument("--since", metavar="DATE", help="Batch: reprocess all meetings on or after this date (YYYY-MM-DD or YYYYMMDD)")
+    reprocess_parser.add_argument("--all", dest="all_meetings", action="store_true", help="Batch: reprocess all meetings in the recordings directory")
+    reprocess_parser.add_argument("--reformat", action="store_true", help="Re-run LLM reformatting")
+    reprocess_parser.add_argument("--summarize", action="store_true", help="Re-run LLM summarization")
+    reprocess_parser.add_argument("--obsidian", action="store_true", help="Re-run Obsidian post-processing (vault copy, frontmatter, index)")
+    reprocess_parser.add_argument("-m", "--model", help="LLM model or preset")
+
     # process
     process_parser = subparsers.add_parser("process", help="Process existing recording")
     process_parser.add_argument("file", help="Audio file")
@@ -227,6 +241,122 @@ def cmd_update_index(args):
     from autonote.obsidian.update_index import run_update_index
     run_update_index(args.summary_file, index=args.index)
 
+def cmd_obsidian(args):
+    from pathlib import Path
+    from autonote.orchestrator import run_obsidian_postprocess
+    from autonote.logger import log_error
+
+    audio = Path(args.file)
+    if not audio.exists():
+        log_error(f"File not found: {audio}")
+        return
+
+    base = audio.stem
+    meeting_dir = audio.parent
+    formatted_file = str(meeting_dir / f"{base}_formatted.md")
+    summary_file = str(meeting_dir / f"{base}_summary.md")
+
+    if not Path(formatted_file).exists():
+        formatted_file = ""
+    if not Path(summary_file).exists():
+        log_error(f"Summary file not found: {base}_summary.md — cannot run obsidian postprocess")
+        return
+
+    run_obsidian_postprocess(str(audio), formatted_file, summary_file)
+
+
+def _discover_audio_files(since_date: str | None = None) -> list:
+    """Return sorted list of audio file paths from the recordings directory, optionally filtered by date."""
+    import glob
+    from pathlib import Path
+
+    recordings_dir = config.get("RECORDINGS_DIR", str(Path.cwd() / "recordings"))
+    since = since_date.replace("-", "") if since_date else None  # normalize to YYYYMMDD
+
+    audio_files = []
+    for date_dir in sorted(Path(recordings_dir).iterdir()):
+        if not date_dir.is_dir() or not date_dir.name.isdigit() or len(date_dir.name) != 8:
+            continue
+        if since and date_dir.name < since:
+            continue
+        for meeting_dir in sorted(date_dir.iterdir()):
+            if not meeting_dir.is_dir():
+                continue
+            for ext in ("wav", "mp3"):
+                candidates = list(meeting_dir.glob(f"meeting_*.{ext}"))
+                if candidates:
+                    audio_files.append(str(candidates[0]))
+                    break
+
+    return audio_files
+
+
+def _reprocess_single(audio_path: str, reformat: bool, summarize: bool, obsidian: bool, model: str | None) -> None:
+    from pathlib import Path
+    from autonote.logger import log_error, log_info
+
+    audio = Path(audio_path)
+    base = audio.stem
+    meeting_dir = audio.parent
+    formatted_file = str(meeting_dir / f"{base}_formatted.md")
+    summary_file = str(meeting_dir / f"{base}_summary.md")
+
+    if reformat:
+        transcript_file = str(meeting_dir / f"{base}.txt")
+        if not Path(transcript_file).exists():
+            log_error(f"Skipping reformat — transcript not found: {transcript_file}")
+        else:
+            from autonote.audio.reformat import run_reformat
+            log_info(f"Reformatting: {audio.name}")
+            formatted_file = run_reformat(transcript_file, model=model)
+
+    if summarize:
+        source = formatted_file if Path(formatted_file).exists() else str(meeting_dir / f"{base}.txt")
+        if not Path(source).exists():
+            log_error(f"Skipping summarize — no source found for: {audio.name}")
+        else:
+            from autonote.audio.summarize import run_summarize
+            log_info(f"Summarizing: {audio.name}")
+            summary_file = run_summarize(source, model=model)
+
+    if obsidian:
+        from autonote.orchestrator import run_obsidian_postprocess
+        if not Path(formatted_file).exists():
+            formatted_file = ""
+        if not Path(summary_file).exists():
+            log_error(f"Skipping obsidian — summary not found: {summary_file}")
+            return
+        run_obsidian_postprocess(audio_path, formatted_file, summary_file)
+
+
+def cmd_reprocess(args):
+    from pathlib import Path
+    from autonote.logger import log_error, log_info
+
+    if not any([args.reformat, args.summarize, args.obsidian]):
+        log_error("Specify at least one step: --reformat, --summarize, --obsidian")
+        return
+
+    if args.file:
+        audio = Path(args.file)
+        if not audio.exists():
+            log_error(f"File not found: {audio}")
+            return
+        _reprocess_single(str(audio), args.reformat, args.summarize, args.obsidian, args.model)
+
+    elif args.since or args.all_meetings:
+        audio_files = _discover_audio_files(since_date=args.since if args.since else None)
+        if not audio_files:
+            log_error("No meetings found matching the criteria.")
+            return
+        log_info(f"Found {len(audio_files)} meeting(s) to reprocess.")
+        for audio_path in audio_files:
+            log_info(f"--- {Path(audio_path).parent.name} ---")
+            _reprocess_single(audio_path, args.reformat, args.summarize, args.obsidian, args.model)
+
+    else:
+        log_error("Provide a file, --since DATE, or --all")
+
 def cmd_process(args):
     from autonote.orchestrator import run_process
     run_process(args.file, diarize=args.diarize, speakers=args.speakers, 
@@ -283,6 +413,10 @@ def main():
         cmd_wikilink(args)
     elif args.command == "update-index":
         cmd_update_index(args)
+    elif args.command == "obsidian":
+        cmd_obsidian(args)
+    elif args.command == "reprocess":
+        cmd_reprocess(args)
     elif args.command == "process":
         cmd_process(args)
     elif args.command == "process-last":
