@@ -9,6 +9,8 @@ TRANSCRIPTION_PROVIDER="local"
 
 # AssemblyAI API key — required when TRANSCRIPTION_PROVIDER="assemblyai"
 # ASSEMBLYAI_API_KEY="your-api-key-here"
+# AssemblyAI cost per minute in USD (default: $0.012 for universal-3-pro)
+# ASSEMBLYAI_COST_PER_MINUTE="0.012"
 
 # Whisper settings — only used when TRANSCRIPTION_PROVIDER="local"
 # Valid models: tiny, base, small, medium, turbo, large-v3

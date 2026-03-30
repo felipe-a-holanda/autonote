@@ -144,6 +144,7 @@ class AssemblyAIProvider(TranscriptionProvider):
         
         config = aai.TranscriptionConfig(
             language_code=language if language else None,
+            speech_models=["universal-3-pro"],
         )
         
         log_info("Starting AssemblyAI transcription...")
@@ -151,9 +152,30 @@ class AssemblyAIProvider(TranscriptionProvider):
         
         if transcript.status == aai.TranscriptStatus.error:
             raise RuntimeError(f"AssemblyAI transcription failed: {transcript.error}")
-        
+
         detected_language = transcript.language_code or "unknown"
-        log_info(f"AssemblyAI transcription complete. Language: {detected_language}")
+        audio_duration = transcript.audio_duration or 0.0
+        log_info(f"AssemblyAI transcription complete. Language: {detected_language}, Duration: {audio_duration:.1f}s")
+
+        try:
+            from autonote.llm import _append_cost_log
+            from autonote.config import config
+            cost_per_min = float(config.get("ASSEMBLYAI_COST_PER_MINUTE", "0.0035"))
+            cost_usd = (audio_duration / 60.0) * cost_per_min
+            usd_to_brl = float(config.get("USD_TO_BRL", "5.50"))
+            _append_cost_log(
+                model="assemblyai/universal-3-pro",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                cost_usd=cost_usd,
+                cost_brl=cost_usd * usd_to_brl,
+                source_file=audio_file,
+                stage="transcription",
+                duration_s=audio_duration,
+            )
+        except Exception as e:
+            log_error(f"Failed to log AssemblyAI cost: {e}")
         
         segments = []
         full_text_parts = []
