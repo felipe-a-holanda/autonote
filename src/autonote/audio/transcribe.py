@@ -45,10 +45,10 @@ def transcribe_audio(
     from autonote.config import config
     
     if provider is None:
-        provider = config.get("TRANSCRIPTION_PROVIDER", "local")
+        provider = config.get("TRANSCRIPTION_PROVIDER")
     
     if api_key is None and provider == "assemblyai":
-        api_key = config.get("ASSEMBLYAI_API_KEY", "")
+        api_key = config.get("ASSEMBLYAI_API_KEY")
     
     transcription_provider = create_transcription_provider(
         provider=provider,

@@ -65,8 +65,8 @@ def load_transcription(file_path: str) -> str:
         return path.read_text()
 
 def run_reformat(transcription_file: str, model: str = None, ollama_url: str = None, output_file: str = None):
-    model = model or config.get("MODEL_REFORMAT", DEFAULT_MODEL)
-    ollama_url = ollama_url or config.get("OLLAMA_URL", "http://localhost:11434")
+    model = model or config.get("MODEL_REFORMAT")
+    ollama_url = ollama_url or config.get("OLLAMA_URL")
     
     transcription = load_transcription(transcription_file)
     if not transcription.strip():

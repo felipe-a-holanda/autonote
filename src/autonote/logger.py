@@ -34,5 +34,5 @@ def log_warn(msg: str):
     console.print(f"[warn][WARN][/warn] {msg}")
 
 def log_debug(msg: str):
-    if config.get("DEBUG", "false").lower() == "true":
+    if config.get("DEBUG").lower() == "true":
         console.print(f"[debug][DEBUG] {msg}[/debug]")

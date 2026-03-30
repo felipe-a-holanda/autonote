@@ -198,8 +198,8 @@ def cmd_transcribe(args):
     from pathlib import Path
     from autonote.config import config
     
-    model = args.model or config.get("WHISPER_MODEL", "turbo")
-    lang = args.language or config.get("WHISPER_LANGUAGE", None)
+    model = args.model or config.get("WHISPER_MODEL")
+    lang = args.language or config.get("WHISPER_LANGUAGE")
     provider = getattr(args, 'provider', None)
     api_key = getattr(args, 'api_key', None)
     
@@ -283,7 +283,7 @@ def _discover_audio_files(since_date: str | None = None, until_date: str | None 
     import glob
     from pathlib import Path
 
-    recordings_dir = config.get("RECORDINGS_DIR", str(Path.cwd() / "recordings"))
+    recordings_dir = config.get("RECORDINGS_DIR")
     since = since_date.replace("-", "") if since_date else None  # normalize to YYYYMMDD
     until = until_date.replace("-", "") if until_date else None  # normalize to YYYYMMDD
 

@@ -9,8 +9,8 @@ from autonote.config import config
 
 def get_pactl_sources():
     try:
-        mic_source = config.get("MIC_SOURCE", "").strip()
-        system_source = config.get("SYSTEM_SOURCE", "").strip()
+        mic_source = config.get("MIC_SOURCE").strip()
+        system_source = config.get("SYSTEM_SOURCE").strip()
         
         if mic_source:
             default_source = mic_source
@@ -56,7 +56,7 @@ def record_audio(duration: int = None, output_file: str = None, title: str = "")
     cmd = ["ffmpeg", "-y"]
     if monitor_source:
         log_info("Mode: mic + system audio")
-        mic_vol = config.get("MIC_VOLUME", "2.0")
+        mic_vol = config.get("MIC_VOLUME")
         cmd.extend([
             "-f", "pulse", "-i", default_source,
             "-f", "pulse", "-i", monitor_source,

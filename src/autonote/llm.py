@@ -14,10 +14,10 @@ litellm.telemetry = False
 
 # Default presets for LLM models
 LLM_PRESETS = {
-    "local": config.get("PRESET_LOCAL", DEFAULT_MODEL),
-    "cheap": config.get("PRESET_CHEAP", "deepseek/deepseek-chat"),
-    "fast": config.get("PRESET_FAST", "openai/gpt-5.4"),
-    "smart": config.get("PRESET_SMART", "anthropic/claude-sonnet-4-6"),
+    "local": config.get("PRESET_LOCAL"),
+    "cheap": config.get("PRESET_CHEAP"),
+    "fast": config.get("PRESET_FAST"),
+    "smart": config.get("PRESET_SMART"),
 }
 
 def _recording_base(source_file: str) -> tuple[Path, str]:
@@ -53,7 +53,7 @@ def _append_cost_log(
     }
 
     # Global JSONL log
-    log_path = config.get("LLM_COST_LOG", "")
+    log_path = config.get("LLM_COST_LOG")
     if log_path:
         recording_dir = str(_recording_base(source_file)[0]) if source_file else None
         global_entry = {**entry, "recording_dir": recording_dir}
@@ -93,7 +93,7 @@ def resolve_model(model: str) -> str:
     All models should be fully-qualified with a provider prefix (e.g. 'ollama/llama3.1:8b',
     'openai/gpt-4o'). Any bare name without a '/' is assumed to be a local Ollama model.
     """
-    model = model or config.get("MODEL", DEFAULT_MODEL)
+    model = model or config.get("MODEL")
     if model in LLM_PRESETS:
         model = LLM_PRESETS[model]
     if "/" not in model:
@@ -127,12 +127,12 @@ def query_llm(
             raise ValueError("Must provide either prompt or messages")
         messages = [{"role": "user", "content": prompt}]
         
-    resolved = resolve_model(model or config.get("MODEL", DEFAULT_MODEL))
-    if resolved != (model or config.get("MODEL", DEFAULT_MODEL)):
+    resolved = resolve_model(model or config.get("MODEL"))
+    if resolved != (model or config.get("MODEL")):
         log_info(f"Using LLM preset: {model} -> {resolved}")
     model = resolved
         
-    ollama_url = config.get("OLLAMA_URL", "http://localhost:11434")
+    ollama_url = config.get("OLLAMA_URL")
     if model.startswith("ollama/"):
         if not api_base:
             api_base = ollama_url
@@ -172,7 +172,7 @@ def query_llm(
                 brl_cost: Optional[float] = None
                 if cost > 0:
                     try:
-                        usd_to_brl = float(config.get("USD_TO_BRL", "5.50"))
+                        usd_to_brl = float(config.get("USD_TO_BRL"))
                         brl_cost = cost * usd_to_brl
                         cost_str = f" (${cost:.6f} / R${brl_cost:.4f})"
                     except (ValueError, TypeError):

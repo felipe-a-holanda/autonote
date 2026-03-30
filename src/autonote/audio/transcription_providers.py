@@ -160,9 +160,9 @@ class AssemblyAIProvider(TranscriptionProvider):
         try:
             from autonote.llm import _append_cost_log
             from autonote.config import config
-            cost_per_min = float(config.get("ASSEMBLYAI_COST_PER_MINUTE", "0.0035"))
+            cost_per_min = float(config.get("ASSEMBLYAI_COST_PER_MINUTE"))
             cost_usd = (audio_duration / 60.0) * cost_per_min
-            usd_to_brl = float(config.get("USD_TO_BRL", "5.50"))
+            usd_to_brl = float(config.get("USD_TO_BRL"))
             _append_cost_log(
                 model="assemblyai/universal-3-pro",
                 prompt_tokens=0,

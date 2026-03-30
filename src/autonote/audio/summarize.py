@@ -86,8 +86,8 @@ def save_summary(result: dict, output_file: str, format: str):
     log_info(f"Summary saved to: {output_path}")
 
 def run_summarize(transcription_file: str, model: str = None, ollama_url: str = None, format: str = "md", output_file: str = None, skip_action_items: bool = False):
-    model = model or config.get("MODEL_SUMMARIZE", DEFAULT_MODEL)
-    ollama_url = ollama_url or config.get("OLLAMA_URL", "http://localhost:11434")
+    model = model or config.get("MODEL_SUMMARIZE")
+    ollama_url = ollama_url or config.get("OLLAMA_URL")
     
     transcription = load_transcription(transcription_file)
     if not transcription.strip():

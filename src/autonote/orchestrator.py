@@ -89,9 +89,9 @@ def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file
     base = source_path.stem.replace("_formatted", "")
     metadata_file = source_path.parent / f"{base}_metadata.json"
 
-    entities_file = config.get("ENTITIES_FILE", str(Path(__file__).parent.parent.parent.parent / "entities.yml"))
-    vault_dir = config.get("VAULT_DIR", "")
-    meeting_index = config.get("MEETING_INDEX", "")
+    entities_file = config.get("ENTITIES_FILE")
+    vault_dir = config.get("VAULT_DIR")
+    meeting_index = config.get("MEETING_INDEX")
 
     if extracted_meta is None and formatted_file and Path(formatted_file).exists():
         log_info("Obsidian: extracting meeting metadata...")
@@ -134,7 +134,7 @@ def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file
             log_error(f"Failed to update index: {e}")
 
     if vault_dir:
-        vault_subdir = config.get("VAULT_SUBDIR", "meetings")
+        vault_subdir = config.get("VAULT_SUBDIR")
         vault_base = Path(vault_dir) / vault_subdir if vault_subdir else Path(vault_dir)
         file_for_path = formatted_file if formatted_file else summary_file
         if file_for_path:
@@ -246,7 +246,7 @@ def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=F
 
 
 def run_process_last(**kwargs):
-    recordings_dir = config.get("RECORDINGS_DIR", str(Path(os.getcwd()) / "recordings"))
+    recordings_dir = config.get("RECORDINGS_DIR")
     wav_files = glob.glob(os.path.join(recordings_dir, "**/*.wav"), recursive=True)
     mp3_files = glob.glob(os.path.join(recordings_dir, "**/*.mp3"), recursive=True)
     all_audio = wav_files + mp3_files

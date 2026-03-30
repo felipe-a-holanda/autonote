@@ -24,7 +24,11 @@ def get_config() -> dict:
     config["WHISPER_MODEL"] = os.environ.get("WHISPER_MODEL", "turbo")
     config["WHISPER_LANGUAGE"] = os.environ.get("WHISPER_LANGUAGE", "")
     config["ASSEMBLYAI_API_KEY"] = os.environ.get("ASSEMBLYAI_API_KEY", "")
-    config["ASSEMBLYAI_COST_PER_MINUTE"] = os.environ.get("ASSEMBLYAI_COST_PER_MINUTE", "0.012")
+    config["ASSEMBLYAI_COST_PER_MINUTE"] = os.environ.get("ASSEMBLYAI_COST_PER_MINUTE", "0.0035")
+    config["PRESET_LOCAL"] = os.environ.get("PRESET_LOCAL", DEFAULT_MODEL)
+    config["PRESET_CHEAP"] = os.environ.get("PRESET_CHEAP", "deepseek/deepseek-chat")
+    config["PRESET_FAST"] = os.environ.get("PRESET_FAST", "openai/gpt-4o")
+    config["PRESET_SMART"] = os.environ.get("PRESET_SMART", "anthropic/claude-3-5-sonnet-20240620")
     _default_model = os.environ.get("MODEL", os.environ.get("LLM_MODEL", os.environ.get("OLLAMA_MODEL", DEFAULT_MODEL)))
     config["MODEL"] = _default_model
     config["MODEL_REFORMAT"] = os.environ.get("MODEL_REFORMAT", _default_model)
