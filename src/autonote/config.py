@@ -39,6 +39,7 @@ def get_config() -> dict:
     config["VAULT_DIR"] = os.environ.get("VAULT_DIR", "")
     config["VAULT_SUBDIR"] = os.environ.get("VAULT_SUBDIR", "meetings")
     config["MEETING_INDEX"] = os.environ.get("MEETING_INDEX", "")
+    config["MEETINGS_CALENDAR"] = os.environ.get("MEETINGS_CALENDAR", os.path.abspath("./meetings_calendar.yml"))
     config["ENTITIES_FILE"] = os.environ.get("ENTITIES_FILE", os.path.abspath("./entities.yml"))
     config["MIC_VOLUME"] = os.environ.get("MIC_VOLUME", "2.0")
     config["MIC_SOURCE"] = os.environ.get("MIC_SOURCE", "")

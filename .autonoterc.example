@@ -36,6 +36,10 @@ VAULT_DIR="/path/to/my/obisdian/vault"
 # Optional: Exact path to an Index file to dynamically append Meeting links to
 MEETING_INDEX="/path/to/my/obisdian/vault/Meetings.md"
 
+# Path to meetings calendar file for recurring meeting patterns (used for LLM title inference)
+# Generate with: autonote calendar-sync
+MEETINGS_CALENDAR="./meetings_calendar.yml"
+
 # Path to the entity dictionary to dynamically inject [[wikilinks]]
 ENTITIES_FILE="./entities.yml"
 

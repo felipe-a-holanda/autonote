@@ -47,13 +47,24 @@ def render_frontmatter(fm: dict) -> str:
 def build_frontmatter_dict(file_path: Path, metadata_path: Path | None, extracted: dict | None, kind: str) -> dict:
     date, time = parse_timestamp_from_filename(file_path.name)
     meta = read_metadata_json(metadata_path)
-    title = meta.get("title", "")
+    user_tag = meta.get("title", "")
     ext = extracted or {}
 
     fm: dict = {}
     fm["date"] = date
     fm["time"] = time
-    fm["title"] = title
+    
+    # LLM-inferred title takes priority, with user_tag as separate field
+    llm_title = ext.get("meeting_title", "").strip()
+    if llm_title:
+        fm["title"] = llm_title
+    else:
+        fm["title"] = user_tag  # Fallback to user tag if LLM didn't infer a title
+    
+    # Keep user_tag as a separate field for reference
+    if user_tag:
+        fm["user_tag"] = user_tag
+    
     fm["tags"] = ext.get("tags", [])
     fm["participants"] = ext.get("participants", [])
     fm["jira_tickets"] = ext.get("jira_tickets", [])

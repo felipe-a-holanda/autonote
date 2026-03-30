@@ -106,6 +106,12 @@ def setup_parser() -> argparse.ArgumentParser:
     index_parser.add_argument("summary_file", help="Path to _summary.md file")
     index_parser.add_argument("--index", required=True, help="Path to Meetings.md index file")
 
+    # calendar-sync
+    calendar_parser = subparsers.add_parser("calendar-sync", help="Generate meetings_calendar.yml from past meeting metadata")
+    calendar_parser.add_argument("--recordings-dir", help="Path to recordings directory (defaults to config)")
+    calendar_parser.add_argument("-o", "--output", help="Output calendar file path (defaults to config)")
+    calendar_parser.add_argument("--min-occurrences", type=int, default=2, help="Minimum occurrences to consider a meeting recurring (default: 2)")
+
     # obsidian
     obsidian_parser = subparsers.add_parser("obsidian", help="Run Obsidian post-processing on an existing meeting (vault copy, frontmatter, index)")
     obsidian_parser.add_argument("file", help="Audio file (WAV or MP3) of the meeting")
@@ -253,6 +259,11 @@ def cmd_wikilink(args):
 def cmd_update_index(args):
     from autonote.obsidian.update_index import run_update_index
     run_update_index(args.summary_file, index=args.index)
+
+def cmd_calendar_sync(args):
+    from autonote.obsidian.calendar import run_calendar_sync
+    run_calendar_sync(recordings_dir=args.recordings_dir, output_file=args.output, 
+                     min_occurrences=args.min_occurrences)
 
 def cmd_obsidian(args):
     from pathlib import Path
@@ -447,6 +458,8 @@ def _dispatch():
         cmd_wikilink(args)
     elif args.command == "update-index":
         cmd_update_index(args)
+    elif args.command == "calendar-sync":
+        cmd_calendar_sync(args)
     elif args.command == "obsidian":
         cmd_obsidian(args)
     elif args.command == "reprocess":
