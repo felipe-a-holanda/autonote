@@ -28,11 +28,23 @@ def _slugify(title: str, max_len: int = 60) -> str:
 def _resolve_vault_title(summary_file: str | None, time: str) -> str:
     """
     Title priority:
-    1. First non-boilerplate heading in summary body (LLM-inferred)
-    2. User-provided recording name (frontmatter title) as fallback
-    When both are present, appends the user tag: "LLM Title - user-tag"
+    1. User-provided recording name (frontmatter title)
+    2. First non-boilerplate heading in summary body (LLM-inferred) as fallback
+    3. Time as final fallback
     """
-    BOILERPLATE = {"meeting summary", "action items", "summary"}
+    BOILERPLATE = {
+        "meeting summary", "action items", "summary",
+        "overview", "meeting overview", "participants", 
+        "key discussion points", "discussion points",
+        "decisions made", "decisions", "key warnings", 
+        "things to remember", "warnings", "next steps", 
+        "follow-up", "notes", "main tasks", "tasks",
+        "content analysis", "formatting guidelines",
+        "additional notes", "key sections", "conclusion",
+        "key takeaways", "takeaways", "per-person updates",
+        "architecture clarification", "blockers", "agenda",
+        "background", "context", "objectives", "goals"
+    }
     if summary_file:
         path = Path(summary_file)
         if path.exists():
@@ -45,15 +57,18 @@ def _resolve_vault_title(summary_file: str | None, time: str) -> str:
                 m = re.match(r"^#{1,3} (.+)", line)
                 if m:
                     heading = m.group(1).strip()
-                    if heading.lower() not in BOILERPLATE:
+                    # Normalize heading: remove emojis, numbered prefixes, and extra whitespace
+                    normalized = re.sub(r'^[\d\.\s]*', '', heading)  # Remove leading numbers and dots
+                    # Remove all emoji characters including compound emojis and variation selectors
+                    normalized = re.sub(r'[\U0001F300-\U0001F9FF\U0001FA00-\U0001FAFF\U00002600-\U000027BF\U0000FE00-\U0000FE0F]+', '', normalized)
+                    normalized = normalized.strip()
+                    if normalized.lower() not in BOILERPLATE:
                         inferred = heading
                         break
-            if inferred and user_tag:
-                return f"{inferred} - {user_tag}"
-            if inferred:
-                return inferred
             if user_tag:
                 return user_tag
+            if inferred:
+                return inferred
     return time
 
 
