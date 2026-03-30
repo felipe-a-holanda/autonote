@@ -404,13 +404,19 @@ def cmd_full(args):
              provider=args.provider, api_key=args.api_key)
 
 def main():
+    try:
+        _dispatch()
+    except KeyboardInterrupt:
+        sys.exit(0)
+
+def _dispatch():
     parser = setup_parser()
     args = parser.parse_args()
-    
+
     if not args.command:
         parser.print_help()
         sys.exit(1)
-        
+
     if args.command == "list":
         cmd_list(args)
     elif args.command == "clean":

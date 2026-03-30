@@ -55,5 +55,10 @@ MANIFEST
 # OS specific
 .DS_Store
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
 
 .ai

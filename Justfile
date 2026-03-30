@@ -11,12 +11,14 @@ default:
 # ---------------------------------------------------------------------------
 
 # Record and run the full pipeline (optionally pass: title="My Meeting" duration=3600)
+[no-exit-message]
 record title="" duration="":
     autonote full \
         {{ if title != "" { '--title "' + title + '"' } else { "" } }} \
         {{ if duration != "" { '--duration ' + duration } else { "" } }}
 
 # Record with diarization (speaker separation)
+[no-exit-message]
 record-diarize title="" duration="" speakers="":
     autonote full --diarize \
         {{ if title != "" { '--title "' + title + '"' } else { "" } }} \
@@ -64,6 +66,18 @@ cost-by-model:
 # Top 10 most expensive recordings
 cost-by-recording:
     @jq -rs 'group_by(.recording_dir) | map({dir: .[0].recording_dir, cost_usd: (map(.cost_usd) | add)}) | sort_by(.cost_usd) | reverse | .[0:10] | .[] | "$\(.cost_usd | . * 1000000 | round / 1000000)\t\(.dir // "unknown")"' "{{COST_LOG}}" | column -t
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+
+# Run all tests
+test:
+    pytest -v
+
+# Run tests with coverage report
+test-cov:
+    pytest --cov=autonote --cov-report=term-missing --cov-report=html
 
 # ---------------------------------------------------------------------------
 # Utilities
