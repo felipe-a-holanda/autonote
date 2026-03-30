@@ -20,8 +20,10 @@ def get_config() -> dict:
     config = {}
     
     config["RECORDINGS_DIR"] = os.environ.get("RECORDINGS_DIR", os.path.abspath("./recordings"))
+    config["TRANSCRIPTION_PROVIDER"] = os.environ.get("TRANSCRIPTION_PROVIDER", "local")
     config["WHISPER_MODEL"] = os.environ.get("WHISPER_MODEL", "turbo")
     config["WHISPER_LANGUAGE"] = os.environ.get("WHISPER_LANGUAGE", "")
+    config["ASSEMBLYAI_API_KEY"] = os.environ.get("ASSEMBLYAI_API_KEY", "")
     _default_model = os.environ.get("MODEL", os.environ.get("LLM_MODEL", os.environ.get("OLLAMA_MODEL", DEFAULT_MODEL)))
     config["MODEL"] = _default_model
     config["MODEL_REFORMAT"] = os.environ.get("MODEL_REFORMAT", _default_model)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Transcription script using openai-whisper
+Transcription script supporting both local (faster-whisper) and external APIs
 Transcribes audio files to text with timestamps
 """
 
@@ -10,91 +10,57 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 from autonote.logger import log_info, log_error
-
-# CTranslate2 (used by faster_whisper) needs CUDA libs that may be installed
-# as pip packages (e.g. nvidia-cublas-cu12) rather than system-wide.
-# Add their lib dirs to LD_LIBRARY_PATH before importing.
-def _setup_cuda_lib_paths():
-    site_packages = Path(__file__).resolve().parent.parent.parent.parent
-    nvidia_dir = site_packages / "nvidia"
-    if nvidia_dir.is_dir():
-        lib_dirs = [str(p) for p in nvidia_dir.glob("*/lib") if p.is_dir()]
-        if lib_dirs:
-            existing = os.environ.get("LD_LIBRARY_PATH", "")
-            os.environ["LD_LIBRARY_PATH"] = ":".join(lib_dirs + ([existing] if existing else []))
-
-_setup_cuda_lib_paths()
-
-try:
-    from faster_whisper import WhisperModel
-except ImportError as e:
-    raise ImportError(
-        "faster-whisper is required for transcription. "
-        "Install it with: uv add faster-whisper"
-    ) from e
-
 
 
 def transcribe_audio(
     audio_file: str,
     model_size: str = "base",
     device: str = "auto",
-    language: str = None,
-    output_format: str = "txt"
+    language: Optional[str] = None,
+    output_format: str = "txt",
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None
 ) -> dict:
     """
-    Transcribe an audio file using openai-whisper
+    Transcribe an audio file using configured provider (local or external API)
 
     Args:
         audio_file: Path to audio file
-        model_size: Whisper model size (tiny, base, small, medium, large-v3, turbo)
-        device: Device to use (cpu, cuda, auto)
+        model_size: Whisper model size (for local provider)
+        device: Device to use (for local provider: cpu, cuda, auto)
         language: Language code (None for auto-detect)
-        output_format: Output format (txt, json, srt, vtt)
+        output_format: Output format (txt, json, srt, vtt) - for compatibility
+        provider: Transcription provider (local, assemblyai, or None for config default)
+        api_key: API key for external providers (or None to use config)
 
     Returns:
-        dict with transcription results
+        dict with transcription results containing:
+            - language: detected or specified language
+            - segments: list of dicts with start, end, text
+            - text: full transcription text
     """
-    # Determine device
-    if device == "auto":
-        try:
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        except ImportError:
-            device = "cpu"
-
-    compute_type = "float16" if device == "cuda" else "int8"
-
-    log_info(f"Loading Whisper model: {model_size} on {device} ({compute_type})")
-    model = WhisperModel(model_size, device=device, compute_type=compute_type)
-
-    log_info(f"Transcribing: {audio_file}")
-    segments_gen, info = model.transcribe(
-        audio_file,
-        language=language,
-        beam_size=5,
+    from autonote.audio.transcription_providers import create_transcription_provider
+    from autonote.config import config
+    
+    if provider is None:
+        provider = config.get("TRANSCRIPTION_PROVIDER", "local")
+    
+    if api_key is None and provider == "assemblyai":
+        api_key = config.get("ASSEMBLYAI_API_KEY", "")
+    
+    transcription_provider = create_transcription_provider(
+        provider=provider,
+        model_size=model_size,
+        device=device,
+        api_key=api_key
     )
-
-    log_info(f"Detected language: {info.language} (probability: {info.language_probability:.2f})")
-
-    # Materialise the generator and reformat to our expected structure
-    all_segments = []
-    full_text_parts = []
-    for segment in segments_gen:
-        text = segment.text.strip()
-        all_segments.append({
-            "start": segment.start,
-            "end": segment.end,
-            "text": text,
-        })
-        full_text_parts.append(text)
-
-    return {
-        "language": info.language,
-        "segments": all_segments,
-        "text": " ".join(full_text_parts),
-    }
+    
+    log_info(f"Using transcription provider: {transcription_provider.get_provider_name()}")
+    result = transcription_provider.transcribe(audio_file, language=language)
+    
+    return result
 
 
 def format_timestamp(seconds: float) -> str:
@@ -137,14 +103,14 @@ def save_transcription(result: dict, output_file: str, format: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Transcribe audio using openai-whisper")
+    parser = argparse.ArgumentParser(description="Transcribe audio using local or external transcription providers")
     parser.add_argument("audio_file", help="Path to audio file")
     parser.add_argument("-m", "--model", default="base",
                        choices=["tiny", "base", "small", "medium", "large-v3", "turbo"],
-                       help="Whisper model size (default: base)")
+                       help="Whisper model size for local provider (default: base)")
     parser.add_argument("-d", "--device", default="auto",
                        choices=["cpu", "cuda", "auto"],
-                       help="Device to use (default: auto)")
+                       help="Device to use for local provider (default: auto)")
     parser.add_argument("-l", "--language", default=None,
                        help="Language code (default: auto-detect)")
     parser.add_argument("-f", "--format", default="txt",
@@ -152,6 +118,11 @@ def main():
                        help="Output format (default: txt)")
     parser.add_argument("-o", "--output",
                        help="Output file (default: audio_file.txt)")
+    parser.add_argument("-p", "--provider", default=None,
+                       choices=["local", "assemblyai"],
+                       help="Transcription provider (default: from config or 'local')")
+    parser.add_argument("-k", "--api-key", default=None,
+                       help="API key for external providers (default: from config)")
 
     args = parser.parse_args()
 
@@ -174,7 +145,9 @@ def main():
             model_size=args.model,
             device=args.device,
             language=args.language,
-            output_format=args.format
+            output_format=args.format,
+            provider=args.provider,
+            api_key=args.api_key
         )
 
         # Save results

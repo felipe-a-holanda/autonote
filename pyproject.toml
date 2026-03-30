@@ -24,6 +24,9 @@ dependencies = [
 diarize = [
     "pyannote.audio",
 ]
+transcribe-external = [
+    "assemblyai",
+]
 
 [project.scripts]
 autonote = "autonote.cli:main"

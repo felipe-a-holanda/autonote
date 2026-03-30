@@ -36,6 +36,8 @@ def setup_parser() -> argparse.ArgumentParser:
     transcribe_parser.add_argument("-l", "--language", help="Language code")
     transcribe_parser.add_argument("-f", "--format", default="txt", choices=["txt", "json", "srt", "vtt"])
     transcribe_parser.add_argument("-o", "--output", help="Output file")
+    transcribe_parser.add_argument("-p", "--provider", choices=["local", "assemblyai"], help="Transcription provider")
+    transcribe_parser.add_argument("-k", "--api-key", help="API key for external providers")
     
     # reformat
     reformat_parser = subparsers.add_parser("reformat", help="Reformat transcript using LLM")
@@ -129,6 +131,8 @@ def setup_parser() -> argparse.ArgumentParser:
     process_parser.add_argument("--no-compress", action="store_true", help="Skip MP3 compression")
     process_parser.add_argument("--keep-wav", action="store_true", help="Keep WAV after compression")
     process_parser.add_argument("--clean", action="store_true", help="Delete all audio files")
+    process_parser.add_argument("-p", "--provider", choices=["local", "assemblyai"], help="Transcription provider")
+    process_parser.add_argument("-k", "--api-key", help="API key for external transcription providers")
 
     # process-last
     process_last_parser = subparsers.add_parser("process-last", help="Process most recent recording")
@@ -138,6 +142,8 @@ def setup_parser() -> argparse.ArgumentParser:
     process_last_parser.add_argument("--no-compress", action="store_true")
     process_last_parser.add_argument("--keep-wav", action="store_true")
     process_last_parser.add_argument("--clean", action="store_true")
+    process_last_parser.add_argument("-p", "--provider", choices=["local", "assemblyai"], help="Transcription provider")
+    process_last_parser.add_argument("-k", "--api-key", help="API key for external transcription providers")
 
     # full
     full_parser = subparsers.add_parser("full", help="Record and process")
@@ -149,6 +155,8 @@ def setup_parser() -> argparse.ArgumentParser:
     full_parser.add_argument("--no-compress", action="store_true")
     full_parser.add_argument("--keep-wav", action="store_true")
     full_parser.add_argument("--clean", action="store_true")
+    full_parser.add_argument("-p", "--provider", choices=["local", "assemblyai"], help="Transcription provider")
+    full_parser.add_argument("-k", "--api-key", help="API key for external transcription providers")
 
     return parser
 
@@ -192,13 +200,16 @@ def cmd_transcribe(args):
     
     model = args.model or config.get("WHISPER_MODEL", "turbo")
     lang = args.language or config.get("WHISPER_LANGUAGE", None)
+    provider = getattr(args, 'provider', None)
+    api_key = getattr(args, 'api_key', None)
     
     if args.output:
         out_file = args.output
     else:
         out_file = str(Path(args.file).with_suffix(f".{args.format}"))
         
-    result = transcribe_audio(args.file, model_size=model, language=lang, output_format=args.format)
+    result = transcribe_audio(args.file, model_size=model, language=lang, output_format=args.format, 
+                             provider=provider, api_key=api_key)
     save_transcription(result, out_file, args.format)
 
 def cmd_reformat(args):
@@ -373,21 +384,24 @@ def cmd_reprocess(args):
 
 def cmd_process(args):
     from autonote.orchestrator import run_process
-    run_process(args.file, diarize=args.diarize, speakers=args.speakers, 
-                no_reformat=args.no_reformat, no_compress=args.no_compress, 
-                keep_wav=args.keep_wav, clean=args.clean)
+    run_process(args.file, diarize=args.diarize, speakers=args.speakers,
+                no_reformat=args.no_reformat, no_compress=args.no_compress,
+                keep_wav=args.keep_wav, clean=args.clean,
+                provider=args.provider, api_key=args.api_key)
 
 def cmd_process_last(args):
     from autonote.orchestrator import run_process_last
-    run_process_last(diarize=args.diarize, speakers=args.speakers, 
-                     no_reformat=args.no_reformat, no_compress=args.no_compress, 
-                     keep_wav=args.keep_wav, clean=args.clean)
+    run_process_last(diarize=args.diarize, speakers=args.speakers,
+                     no_reformat=args.no_reformat, no_compress=args.no_compress,
+                     keep_wav=args.keep_wav, clean=args.clean,
+                     provider=args.provider, api_key=args.api_key)
 
 def cmd_full(args):
     from autonote.orchestrator import run_full
-    run_full(duration=args.duration, title=args.title, diarize=args.diarize, 
-             speakers=args.speakers, no_reformat=args.no_reformat, 
-             no_compress=args.no_compress, keep_wav=args.keep_wav, clean=args.clean)
+    run_full(duration=args.duration, title=args.title, diarize=args.diarize,
+             speakers=args.speakers, no_reformat=args.no_reformat,
+             no_compress=args.no_compress, keep_wav=args.keep_wav, clean=args.clean,
+             provider=args.provider, api_key=args.api_key)
 
 def main():
     parser = setup_parser()

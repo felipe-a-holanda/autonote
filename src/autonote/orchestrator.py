@@ -173,7 +173,7 @@ def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file
                 log_success(f"Vault: {dest.relative_to(Path(vault_dir))}")
 
 
-def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=False, keep_wav=False, clean=False, **kwargs):
+def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=False, keep_wav=False, clean=False, provider: str | None = None, api_key: str | None = None, **kwargs):
     if not Path(audio_file).exists():
         log_error(f"Audio file not found: {audio_file}")
         return
@@ -189,23 +189,23 @@ def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=F
             return
         log_info("Step 2: Identifying speakers...")
         speakers_file = run_diarize(audio_file, speakers=kwargs.get("speakers"))
-        
+
         log_info("Step 3: Transcribing audio...")
-        trans_result = transcribe_audio(audio_file, output_format="json")
+        trans_result = transcribe_audio(audio_file, output_format="json", provider=provider, api_key=api_key)
         transcription_json = str(Path(audio_file).with_suffix(".json"))
         save_transcription(trans_result, transcription_json, "json")
-        
+
         log_info("Step 4: Merging speaker info with transcription...")
         diarized_file = run_merge(speakers_file, transcription_json)
-        
+
         log_info("Step 5: Label speakers with their names...")
         labeled_file = run_label(diarized_file)
-        
+
         log_info("Step 6: Creating final transcript with speaker names...")
         transcription_file = run_apply_labels(labeled_file, format="txt")
     else:
         log_info("Step 2: Transcribing audio...")
-        trans_result = transcribe_audio(audio_file, output_format="txt")
+        trans_result = transcribe_audio(audio_file, output_format="txt", provider=provider, api_key=api_key)
         transcription_file = str(Path(audio_file).with_suffix(".txt"))
         save_transcription(trans_result, transcription_file, "txt")
 

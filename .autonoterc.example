@@ -4,7 +4,14 @@
 # Directory to save all original WAV/MP3 files, raw transcripts, and final markdown 
 RECORDINGS_DIR="./recordings"
 
-# Whisper settings (Valid models: tiny, base, small, medium, turbo, large-v3)
+# Transcription provider: "local" (faster-whisper) or "assemblyai" (cloud API)
+TRANSCRIPTION_PROVIDER="local"
+
+# AssemblyAI API key — required when TRANSCRIPTION_PROVIDER="assemblyai"
+# ASSEMBLYAI_API_KEY="your-api-key-here"
+
+# Whisper settings — only used when TRANSCRIPTION_PROVIDER="local"
+# Valid models: tiny, base, small, medium, turbo, large-v3
 WHISPER_MODEL="turbo"
 WHISPER_LANGUAGE="en"
 

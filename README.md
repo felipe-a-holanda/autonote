@@ -14,11 +14,19 @@ You'll need a `.autonoterc` file in either your home directory (`~/.autonoterc`)
 ### Configuration (`.autonoterc`)
 ```env
 RECORDINGS_DIR="./recordings"
-WHISPER_MODEL="turbo"
+
+# Transcription settings
+TRANSCRIPTION_PROVIDER="local"  # Options: "local" (default), "assemblyai"
+WHISPER_MODEL="turbo"  # For local provider only
 WHISPER_LANGUAGE="en"
+ASSEMBLYAI_API_KEY=""  # Required for AssemblyAI provider
+
+# LLM settings
 OLLAMA_MODEL="llama3.1:8b"
 OLLAMA_REFORMAT_MODEL="llama3.1:8b"
 OLLAMA_URL="http://localhost:11434"
+
+# Obsidian integration
 VAULT_DIR="/path/to/my/obisdian/vault"
 MEETING_INDEX="/path/to/my/obisdian/vault/Meetings.md"
 ENTITIES_FILE="./entities.yml"
@@ -30,6 +38,38 @@ Ensure you have the following system dependencies installed:
 - `pactl` (pulseaudio-utils or pipewire-pulse)
 - Python 3.10+
 
+### External Transcription APIs
+
+By default, Autonote uses the local `faster-whisper` model for transcription. However, you can configure it to use external transcription APIs for potentially better accuracy, speed, or language support.
+
+#### Supported Providers
+- **`local`** (default): Uses faster-whisper running on your machine
+- **`assemblyai`**: Uses AssemblyAI's cloud transcription API
+
+#### Configuration
+Set the provider globally in your `.autonoterc`:
+```env
+TRANSCRIPTION_PROVIDER="assemblyai"
+ASSEMBLYAI_API_KEY="your-api-key-here"
+```
+
+Or override per-command using CLI flags:
+```bash
+autonote transcribe audio.mp3 --provider assemblyai --api-key YOUR_KEY
+```
+
+#### Getting an AssemblyAI API Key
+1. Sign up at https://www.assemblyai.com/
+2. Copy your API key from the dashboard
+3. Add it to your `.autonoterc` file
+
+#### Installing Dependencies
+For AssemblyAI support, install with the external transcription extras:
+```bash
+pip install -e ".[transcribe-external]"
+# or with uv
+uv sync --extra transcribe-external
+```
 
 ## Usage
 
@@ -40,8 +80,11 @@ Autonote offers granular components and macro-orchestration pipelines. You can u
 # Record for generic use
 autonote record
 
-# Manually transcribe
+# Manually transcribe (uses default provider from config)
 autonote transcribe recordings/my_audio.mp3
+
+# Use specific transcription provider
+autonote transcribe recordings/my_audio.mp3 --provider assemblyai --api-key YOUR_API_KEY
 
 # Apply LLM cleanups
 autonote reformat recordings/my_audio.txt
