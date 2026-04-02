@@ -175,10 +175,14 @@ def run_obsidian_postprocess(source_file: str, formatted_file: str, summary_file
                 log_success(f"Vault: {dest.relative_to(Path(vault_dir))}")
 
 
-def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=False, keep_wav=False, clean=False, provider: str | None = None, api_key: str | None = None, **kwargs):
+def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=False, keep_wav=False, clean=False, provider: str | None = None, api_key: str | None = None, resume: bool = False, model: str | None = None, **kwargs):
     if not Path(audio_file).exists():
         log_error(f"Audio file not found: {audio_file}")
         return
+
+    audio_path = Path(audio_file)
+    base = audio_path.stem
+    meeting_dir = audio_path.parent
 
     if diarize:
         try:
@@ -206,30 +210,48 @@ def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=F
         log_info("Step 6: Creating final transcript with speaker names...")
         transcription_file = run_apply_labels(labeled_file, format="txt")
     else:
-        log_info("Step 2: Transcribing audio...")
-        trans_result = transcribe_audio(audio_file, output_format="txt", provider=provider, api_key=api_key)
-        transcription_file = str(Path(audio_file).with_suffix(".txt"))
-        save_transcription(trans_result, transcription_file, "txt")
+        transcription_file = str(meeting_dir / f"{base}.txt")
+        if resume and Path(transcription_file).exists():
+            log_info("Resuming: skipping transcription (already done).")
+        else:
+            log_info("Step 2: Transcribing audio...")
+            trans_result = transcribe_audio(audio_file, output_format="txt", provider=provider, api_key=api_key)
+            save_transcription(trans_result, transcription_file, "txt")
 
     formatted_file = ""
     summarize_input = transcription_file
     if not no_reformat:
-        log_info("Step: Reformatting transcription...")
-        formatted_file = run_reformat(transcription_file)
+        expected_formatted = str(meeting_dir / f"{base}_formatted.md")
+        if resume and Path(expected_formatted).exists():
+            log_info("Resuming: skipping reformat (already done).")
+            formatted_file = expected_formatted
+        else:
+            log_info("Step: Reformatting transcription...")
+            formatted_file = run_reformat(transcription_file, model=model)
         summarize_input = formatted_file
 
     log_info("Step: Generating summary and extracting metadata in parallel...")
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        future_summary = executor.submit(run_summarize, summarize_input)
-        future_meta = executor.submit(run_extract_metadata, summarize_input) if (summarize_input and Path(summarize_input).exists()) else None
-        summary_file = future_summary.result()
+    expected_summary = str(meeting_dir / f"{base}_summary.md")
+    expected_extracted = meeting_dir / f"{base}_extracted_metadata.json"
+    if resume and Path(expected_summary).exists():
+        log_info("Resuming: skipping summarization (already done).")
+        summary_file = expected_summary
         extracted_meta = None
-        if future_meta:
-            try:
-                extracted_meta = future_meta.result()
-            except Exception as e:
-                log_error(f"Failed to extract metadata: {e}")
+    else:
+        skip_meta = resume and expected_extracted.exists()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_summary = executor.submit(run_summarize, summarize_input, model)
+            future_meta = executor.submit(run_extract_metadata, summarize_input) if (not skip_meta and summarize_input and Path(summarize_input).exists()) else None
+            if skip_meta:
+                log_info("Resuming: skipping metadata extraction (already done).")
+            summary_file = future_summary.result()
+            extracted_meta = None
+            if future_meta:
+                try:
+                    extracted_meta = future_meta.result()
+                except Exception as e:
+                    log_error(f"Failed to extract metadata: {e}")
 
     log_info("Step: Obsidian post-processing...")
     run_obsidian_postprocess(audio_file, formatted_file, summary_file, extracted_meta=extracted_meta)
@@ -241,8 +263,12 @@ def run_process(audio_file: str, diarize=False, no_reformat=False, no_compress=F
         if Path(mp3_file).exists(): os.remove(mp3_file)
         log_success("Removed audio files.")
     elif not no_compress:
-        log_info("Step: Compressing audio to MP3...")
-        compress_audio(audio_file, delete_wav=not keep_wav)
+        mp3_file = Path(audio_file).with_suffix(".mp3")
+        if resume and mp3_file.exists():
+            log_info("Resuming: skipping compression (already done).")
+        else:
+            log_info("Step: Compressing audio to MP3...")
+            compress_audio(audio_file, delete_wav=not keep_wav)
 
     log_success("Processing complete!")
 
@@ -252,7 +278,7 @@ def run_process_last(**kwargs):
     wav_files = glob.glob(os.path.join(recordings_dir, "**/*.wav"), recursive=True)
     mp3_files = glob.glob(os.path.join(recordings_dir, "**/*.mp3"), recursive=True)
     all_audio = wav_files + mp3_files
-    
+
     if not all_audio:
         log_error("No audio files found in recordings directory.")
         return
@@ -260,6 +286,26 @@ def run_process_last(**kwargs):
     latest_audio = max(all_audio, key=os.path.getmtime)
     log_info(f"Most recent recording found: {latest_audio}")
     run_process(latest_audio, **kwargs)
+
+
+def run_resume(audio_file: str | None = None, model: str | None = None, **kwargs):
+    """Resume processing the given recording (or the most recent one) from the last completed step."""
+    if audio_file:
+        if not Path(audio_file).exists():
+            log_error(f"Audio file not found: {audio_file}")
+            return
+        log_info(f"Resuming processing: {audio_file}")
+    else:
+        recordings_dir = config.get("RECORDINGS_DIR")
+        wav_files = glob.glob(os.path.join(recordings_dir, "**/*.wav"), recursive=True)
+        mp3_files = glob.glob(os.path.join(recordings_dir, "**/*.mp3"), recursive=True)
+        all_audio = wav_files + mp3_files
+        if not all_audio:
+            log_error("No audio files found in recordings directory.")
+            return
+        audio_file = max(all_audio, key=os.path.getmtime)
+        log_info(f"Most recent recording found: {audio_file}")
+    run_process(audio_file, resume=True, model=model, **kwargs)
 
 
 def run_full(duration=None, title=None, **kwargs):

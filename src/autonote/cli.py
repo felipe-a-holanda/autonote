@@ -139,6 +139,7 @@ def setup_parser() -> argparse.ArgumentParser:
     process_parser.add_argument("--clean", action="store_true", help="Delete all audio files")
     process_parser.add_argument("-p", "--provider", choices=["local", "assemblyai"], help="Transcription provider")
     process_parser.add_argument("-k", "--api-key", help="API key for external transcription providers")
+    process_parser.add_argument("--resume", action="store_true", help="Skip steps whose output files already exist")
 
     # process-last
     process_last_parser = subparsers.add_parser("process-last", help="Process most recent recording")
@@ -150,6 +151,18 @@ def setup_parser() -> argparse.ArgumentParser:
     process_last_parser.add_argument("--clean", action="store_true")
     process_last_parser.add_argument("-p", "--provider", choices=["local", "assemblyai"], help="Transcription provider")
     process_last_parser.add_argument("-k", "--api-key", help="API key for external transcription providers")
+    process_last_parser.add_argument("--resume", action="store_true", help="Skip steps whose output files already exist")
+
+    # resume
+    resume_parser = subparsers.add_parser("resume", help="Resume processing the last (or given) recording from the last completed step")
+    resume_parser.add_argument("file", nargs="?", help="Audio file (defaults to most recent recording)")
+    resume_parser.add_argument("--no-reformat", action="store_true", help="Skip LLM reformatting")
+    resume_parser.add_argument("--no-compress", action="store_true", help="Skip MP3 compression")
+    resume_parser.add_argument("--keep-wav", action="store_true", help="Keep WAV after compression")
+    resume_parser.add_argument("--clean", action="store_true", help="Delete all audio files")
+    resume_parser.add_argument("-m", "--model", help="LLM model or preset for summarize/reformat steps")
+    resume_parser.add_argument("-p", "--provider", choices=["local", "assemblyai"], help="Transcription provider")
+    resume_parser.add_argument("-k", "--api-key", help="API key for external transcription providers")
 
     # full
     full_parser = subparsers.add_parser("full", help="Record and process")
@@ -398,14 +411,23 @@ def cmd_process(args):
     run_process(args.file, diarize=args.diarize, speakers=args.speakers,
                 no_reformat=args.no_reformat, no_compress=args.no_compress,
                 keep_wav=args.keep_wav, clean=args.clean,
-                provider=args.provider, api_key=args.api_key)
+                provider=args.provider, api_key=args.api_key,
+                resume=args.resume)
 
 def cmd_process_last(args):
     from autonote.orchestrator import run_process_last
     run_process_last(diarize=args.diarize, speakers=args.speakers,
                      no_reformat=args.no_reformat, no_compress=args.no_compress,
                      keep_wav=args.keep_wav, clean=args.clean,
-                     provider=args.provider, api_key=args.api_key)
+                     provider=args.provider, api_key=args.api_key,
+                     resume=args.resume)
+
+def cmd_resume(args):
+    from autonote.orchestrator import run_resume
+    run_resume(audio_file=args.file,
+               no_reformat=args.no_reformat, no_compress=args.no_compress,
+               keep_wav=args.keep_wav, clean=args.clean,
+               model=args.model, provider=args.provider, api_key=args.api_key)
 
 def cmd_full(args):
     from autonote.orchestrator import run_full
@@ -468,6 +490,8 @@ def _dispatch():
         cmd_process(args)
     elif args.command == "process-last":
         cmd_process_last(args)
+    elif args.command == "resume":
+        cmd_resume(args)
     elif args.command == "full":
         cmd_full(args)
     else:
