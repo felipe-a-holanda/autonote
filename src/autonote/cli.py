@@ -177,6 +177,13 @@ def setup_parser() -> argparse.ArgumentParser:
     full_parser.add_argument("-p", "--provider", choices=["local", "assemblyai"], help="Transcription provider")
     full_parser.add_argument("-k", "--api-key", help="API key for external transcription providers")
 
+    # realtime
+    realtime_parser = subparsers.add_parser("realtime", help="Live meeting copilot with real-time transcription and AI reasoning")
+    realtime_parser.add_argument("-t", "--title", help="Meeting title")
+    realtime_parser.add_argument("-k", "--api-key", help="AssemblyAI API key")
+    realtime_parser.add_argument("-m", "--model", help="LLM model or preset for reasoning (fast, smart, cheap, local)")
+    realtime_parser.add_argument("--save", action="store_true", help="Save WAV recordings to disk")
+
     return parser
 
 def cmd_list(args):
@@ -436,6 +443,15 @@ def cmd_full(args):
              no_compress=args.no_compress, keep_wav=args.keep_wav, clean=args.clean,
              provider=args.provider, api_key=args.api_key)
 
+def cmd_realtime(args):
+    from autonote.realtime.app import run_realtime_app
+    run_realtime_app(
+        api_key=getattr(args, 'api_key', None),
+        model=getattr(args, 'model', None),
+        save_recordings=getattr(args, 'save', False),
+        title=getattr(args, 'title', '') or '',
+    )
+
 def main():
     try:
         _dispatch()
@@ -494,6 +510,8 @@ def _dispatch():
         cmd_resume(args)
     elif args.command == "full":
         cmd_full(args)
+    elif args.command == "realtime":
+        cmd_realtime(args)
     else:
         print(f"Command {args.command} is not implemented yet.")
         sys.exit(1)
