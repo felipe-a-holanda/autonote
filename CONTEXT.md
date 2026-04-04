@@ -3,8 +3,14 @@
 
 ## Estado Atual
 - **Fase**: 2 — Context Manager Turn Awareness
-- **Última tarefa**: Task 2.1 — Add `turns` list and `add_turn()` to `MeetingState`
-- **Testes passando**: 399
+- **Última tarefa**: Task 2.2 — Switch reasoning triggers from segment-count to turn-count
+- **Testes passando**: 411
+
+## Decisões Técnicas (Task 2.2)
+- `on_new_segment()` kept as-is for backward compat; `on_new_turn()` is the new primary trigger path.
+- `app.py` now calls `on_new_turn(item)` directly — no more synthetic `TranscriptSegment` wrapper.
+- Two `test_realtime_app.py` tests updated: they now assert `AggregatedTurn` is passed to `on_new_turn`, not a synthetic segment.
+- `SUMMARY_EVERY_N_TURNS=5` and `ACTION_SCAN_EVERY_N_TURNS=3` are overridable via constructor kwargs `summary_every_n_turns` / `action_scan_every_n_turns`.
 
 ## Decisões Técnicas (Task 2.1)
 - `turns` and `turns_since_*` counters are independent from `segments` and `segments_since_*` — `add_turn()` does not touch segment counters and vice versa.

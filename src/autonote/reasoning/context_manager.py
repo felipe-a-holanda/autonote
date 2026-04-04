@@ -107,6 +107,8 @@ class ContextManager:
 
     SUMMARY_EVERY_N_SEGMENTS: int = 10
     ACTION_SCAN_EVERY_N_SEGMENTS: int = 5
+    SUMMARY_EVERY_N_TURNS: int = 5
+    ACTION_SCAN_EVERY_N_TURNS: int = 3
     CONTRADICTION_CHECK_SECONDS: int = 120
 
     def __init__(
@@ -116,6 +118,8 @@ class ContextManager:
         *,
         summary_every_n: Optional[int] = None,
         action_scan_every_n: Optional[int] = None,
+        summary_every_n_turns: Optional[int] = None,
+        action_scan_every_n_turns: Optional[int] = None,
         contradiction_check_seconds: Optional[int] = None,
         session_id: str = "",
     ) -> None:
@@ -138,6 +142,10 @@ class ContextManager:
             self.SUMMARY_EVERY_N_SEGMENTS = summary_every_n
         if action_scan_every_n is not None:
             self.ACTION_SCAN_EVERY_N_SEGMENTS = action_scan_every_n
+        if summary_every_n_turns is not None:
+            self.SUMMARY_EVERY_N_TURNS = summary_every_n_turns
+        if action_scan_every_n_turns is not None:
+            self.ACTION_SCAN_EVERY_N_TURNS = action_scan_every_n_turns
         if contradiction_check_seconds is not None:
             self.CONTRADICTION_CHECK_SECONDS = contradiction_check_seconds
 
@@ -162,6 +170,28 @@ class ContextManager:
         if self.state.segments_since_last_action_scan >= self.ACTION_SCAN_EVERY_N_SEGMENTS:
             self._fire_task(self._run_action_items())
             self.state.segments_since_last_action_scan = 0
+
+        now = time.time()
+        if now - self._last_contradiction_check >= self.CONTRADICTION_CHECK_SECONDS:
+            self._fire_task(self._run_contradictions())
+            self._last_contradiction_check = now
+
+    async def on_new_turn(self, turn: AggregatedTurn) -> None:
+        """Process a completed aggregated turn.
+
+        Adds the turn to state, emits it via the event callback, and
+        triggers reasoning tasks based on turn-count thresholds.
+        """
+        self.state.add_turn(turn)
+        await self.on_event(turn)
+
+        if self.state.turns_since_last_summary >= self.SUMMARY_EVERY_N_TURNS:
+            self._fire_task(self._run_summary())
+            self.state.turns_since_last_summary = 0
+
+        if self.state.turns_since_last_action_scan >= self.ACTION_SCAN_EVERY_N_TURNS:
+            self._fire_task(self._run_action_items())
+            self.state.turns_since_last_action_scan = 0
 
         now = time.time()
         if now - self._last_contradiction_check >= self.CONTRADICTION_CHECK_SECONDS:

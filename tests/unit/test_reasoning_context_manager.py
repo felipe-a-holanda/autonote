@@ -273,3 +273,119 @@ class TestContextManager:
             for i in range(2):
                 await cm.on_new_segment(make_segment(f"s{i}", start=float(i), end=float(i+1)))
         assert cm.state.segments_since_last_summary == 0
+
+
+# ---------------------------------------------------------------------------
+# ContextManager — turn-based triggers
+# ---------------------------------------------------------------------------
+
+class TestContextManagerTurnTriggers:
+
+    def _make_cm(self, summary_turns=5, action_turns=3) -> tuple[ContextManager, list]:
+        received: list = []
+
+        async def on_event(evt):
+            received.append(evt)
+
+        dispatcher = make_dispatcher()
+        cm = ContextManager(
+            dispatcher=dispatcher,
+            on_event=on_event,
+            summary_every_n_turns=summary_turns,
+            action_scan_every_n_turns=action_turns,
+            session_id="test-turns",
+        )
+        return cm, received
+
+    async def test_on_new_turn_emits_event(self):
+        cm, received = self._make_cm()
+        turn = make_turn()
+        await cm.on_new_turn(turn)
+        assert turn in received
+
+    async def test_on_new_turn_adds_to_state(self):
+        cm, _ = self._make_cm()
+        turn = make_turn(speaker="Them")
+        await cm.on_new_turn(turn)
+        assert len(cm.state.turns) == 1
+        assert "Them" in cm.state.speakers
+
+    async def test_summary_triggered_after_n_turns(self):
+        cm, _ = self._make_cm(summary_turns=5, action_turns=100)
+        with patch.object(cm, "_fire_task") as mock_fire, \
+             patch.object(cm, "_run_summary") as mock_run_summary:
+            mock_run_summary.return_value = MagicMock()
+            for i in range(5):
+                await cm.on_new_turn(make_turn(f"text{i}", start=float(i), end=float(i+2)))
+            assert mock_fire.called
+
+    async def test_summary_not_triggered_before_threshold(self):
+        cm, _ = self._make_cm(summary_turns=5, action_turns=100)
+        with patch.object(cm, "_fire_task") as mock_fire:
+            for i in range(4):
+                await cm.on_new_turn(make_turn(f"text{i}", start=float(i), end=float(i+2)))
+            mock_fire.assert_not_called()
+
+    async def test_action_items_triggered_after_n_turns(self):
+        cm, _ = self._make_cm(summary_turns=100, action_turns=3)
+        with patch.object(cm, "_fire_task") as mock_fire, \
+             patch.object(cm, "_run_action_items") as mock_run_ai:
+            mock_run_ai.return_value = MagicMock()
+            for i in range(3):
+                await cm.on_new_turn(make_turn(f"text{i}", start=float(i), end=float(i+2)))
+            assert mock_fire.called
+
+    async def test_action_items_not_triggered_before_threshold(self):
+        cm, _ = self._make_cm(summary_turns=100, action_turns=3)
+        with patch.object(cm, "_fire_task") as mock_fire:
+            for i in range(2):
+                await cm.on_new_turn(make_turn(f"text{i}", start=float(i), end=float(i+2)))
+            mock_fire.assert_not_called()
+
+    async def test_turn_counter_resets_after_summary_trigger(self):
+        cm, _ = self._make_cm(summary_turns=3, action_turns=100)
+        with patch.object(cm, "_fire_task"):
+            for i in range(3):
+                await cm.on_new_turn(make_turn(f"text{i}", start=float(i), end=float(i+2)))
+        assert cm.state.turns_since_last_summary == 0
+
+    async def test_turn_counter_resets_after_action_trigger(self):
+        cm, _ = self._make_cm(summary_turns=100, action_turns=3)
+        with patch.object(cm, "_fire_task"):
+            for i in range(3):
+                await cm.on_new_turn(make_turn(f"text{i}", start=float(i), end=float(i+2)))
+        assert cm.state.turns_since_last_action_scan == 0
+
+    async def test_contradiction_check_is_time_based_not_turn_based(self):
+        cm, _ = self._make_cm()
+        with patch.object(cm, "_fire_task") as mock_fire, \
+             patch.object(cm, "_run_contradictions") as mock_contra:
+            mock_contra.return_value = MagicMock()
+            # Feed many turns — contradictions should NOT trigger (time hasn't passed)
+            for i in range(20):
+                await cm.on_new_turn(make_turn(f"text{i}", start=float(i), end=float(i+2)))
+            contradiction_calls = [
+                c for c in mock_fire.call_args_list
+                if mock_contra.called
+            ]
+            # _run_contradictions should not have been called without time passing
+            assert not mock_contra.called
+
+    async def test_contradiction_triggers_when_time_passes(self):
+        cm, _ = self._make_cm()
+        cm._last_contradiction_check -= 200  # simulate 200s passing
+        with patch.object(cm, "_fire_task") as mock_fire, \
+             patch.object(cm, "_run_contradictions") as mock_contra:
+            mock_contra.return_value = MagicMock()
+            await cm.on_new_turn(make_turn())
+            assert mock_fire.called
+
+    async def test_default_summary_every_n_turns(self):
+        dispatcher = make_dispatcher()
+        cm = ContextManager(dispatcher=dispatcher, on_event=AsyncMock(), session_id="t")
+        assert cm.SUMMARY_EVERY_N_TURNS == 5
+
+    async def test_default_action_scan_every_n_turns(self):
+        dispatcher = make_dispatcher()
+        cm = ContextManager(dispatcher=dispatcher, on_event=AsyncMock(), session_id="t")
+        assert cm.ACTION_SCAN_EVERY_N_TURNS == 3

@@ -392,15 +392,7 @@ class RealtimeApp(App):
                 self._debug(f"Turn #{turn_count} [{item.speaker}]: {item.text[:60]}")
                 await self._handle_event(item)
                 self._append_transcript(item)
-                await self._context_manager.on_new_segment(
-                    TranscriptSegment(
-                        speaker=item.speaker,
-                        text=item.text,
-                        timestamp_start=item.timestamp_start,
-                        timestamp_end=item.timestamp_end,
-                        is_partial=False,
-                    )
-                )
+                await self._context_manager.on_new_turn(item)
 
     def _append_transcript(self, segment: TranscriptSegment | AggregatedTurn) -> None:
         """Append a transcript entry as a JSON line to the transcript file."""

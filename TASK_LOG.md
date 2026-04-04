@@ -62,7 +62,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
   - Keep `add_segment()` working for backward compatibility
   - Tests (new `tests/unit/test_context_manager.py`): `add_turn()` increments counters, turns list grows, speakers set updated
 
-- [ ] Task 2.2 — Switch reasoning triggers from segment-count to turn-count in `context_manager.py`. Commit: `feat(reasoning): switch reasoning triggers to turn-based thresholds`
+- [x] Task 2.2 — Switch reasoning triggers from segment-count to turn-count in `context_manager.py`. Commit: `feat(reasoning): switch reasoning triggers to turn-based thresholds` — 12 new tests, 411 total passing. Added `on_new_turn()` method with `SUMMARY_EVERY_N_TURNS=5` and `ACTION_SCAN_EVERY_N_TURNS=3`; `on_new_segment()` unchanged for backward compat; `app.py` now calls `on_new_turn(item)` directly instead of synthetic segment. Updated 2 existing tests in `test_realtime_app.py` that expected synthetic `TranscriptSegment`.
 
   **Details:**
   - Change `on_new_segment()` to `on_new_turn(turn: AggregatedTurn)`

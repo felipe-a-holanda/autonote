@@ -409,27 +409,23 @@ class TestBridgeSegments:
         from autonote.realtime.app import RealtimeApp
         return RealtimeApp(api_key="test", model=None, title="Test")
 
-    def test_bridge_feeds_segment_into_aggregator(self):
+    async def test_bridge_feeds_segment_into_aggregator(self):
         from autonote.realtime.aggregator import TurnAggregator
 
         app = self._make_app()
+        app._aggregator = TurnAggregator()
+        transcriber_queue: asyncio.Queue = asyncio.Queue()
+        mock_transcriber = MagicMock()
+        mock_transcriber.segment_queue = transcriber_queue
+        app._transcriber = mock_transcriber
 
-        async def run():
-            app._aggregator = TurnAggregator()
-            transcriber_queue: asyncio.Queue = asyncio.Queue()
-            mock_transcriber = MagicMock()
-            mock_transcriber.segment_queue = transcriber_queue
-            app._transcriber = mock_transcriber
+        segment = TranscriptSegment(
+            speaker="Me", text="Hello", timestamp_start=0.0, timestamp_end=1.0
+        )
+        transcriber_queue.put_nowait(segment)
+        transcriber_queue.put_nowait(None)
 
-            segment = TranscriptSegment(
-                speaker="Me", text="Hello", timestamp_start=0.0, timestamp_end=1.0
-            )
-            transcriber_queue.put_nowait(segment)
-            transcriber_queue.put_nowait(None)
-
-            await app._bridge_segments()
-
-        asyncio.get_event_loop().run_until_complete(run())
+        await app._bridge_segments()
 
         # The aggregator should have buffered the segment; flush_remaining was called
         # so output_queue should have an AggregatedTurn and a None sentinel
@@ -443,27 +439,23 @@ class TestBridgeSegments:
         assert items[0].text == "Hello"
         assert items[1] is None  # sentinel from bridge
 
-    def test_bridge_forwards_partial_directly(self):
+    async def test_bridge_forwards_partial_directly(self):
         from autonote.realtime.aggregator import TurnAggregator
 
         app = self._make_app()
+        app._aggregator = TurnAggregator()
+        transcriber_queue: asyncio.Queue = asyncio.Queue()
+        mock_transcriber = MagicMock()
+        mock_transcriber.segment_queue = transcriber_queue
+        app._transcriber = mock_transcriber
 
-        async def run():
-            app._aggregator = TurnAggregator()
-            transcriber_queue: asyncio.Queue = asyncio.Queue()
-            mock_transcriber = MagicMock()
-            mock_transcriber.segment_queue = transcriber_queue
-            app._transcriber = mock_transcriber
+        partial = TranscriptSegment(
+            speaker="Me", text="hel", timestamp_start=0.0, timestamp_end=0.5, is_partial=True
+        )
+        transcriber_queue.put_nowait(partial)
+        transcriber_queue.put_nowait(None)
 
-            partial = TranscriptSegment(
-                speaker="Me", text="hel", timestamp_start=0.0, timestamp_end=0.5, is_partial=True
-            )
-            transcriber_queue.put_nowait(partial)
-            transcriber_queue.put_nowait(None)
-
-            await app._bridge_segments()
-
-        asyncio.get_event_loop().run_until_complete(run())
+        await app._bridge_segments()
 
         # Partial should be forwarded immediately; flush_remaining adds nothing (no finals)
         items = []
@@ -475,22 +467,19 @@ class TestBridgeSegments:
         assert items[0].is_partial is True
         assert items[1] is None
 
-    def test_bridge_puts_none_sentinel_on_aggregator_queue(self):
+    async def test_bridge_puts_none_sentinel_on_aggregator_queue(self):
         from autonote.realtime.aggregator import TurnAggregator
 
         app = self._make_app()
+        app._aggregator = TurnAggregator()
+        transcriber_queue: asyncio.Queue = asyncio.Queue()
+        mock_transcriber = MagicMock()
+        mock_transcriber.segment_queue = transcriber_queue
+        app._transcriber = mock_transcriber
 
-        async def run():
-            app._aggregator = TurnAggregator()
-            transcriber_queue: asyncio.Queue = asyncio.Queue()
-            mock_transcriber = MagicMock()
-            mock_transcriber.segment_queue = transcriber_queue
-            app._transcriber = mock_transcriber
+        transcriber_queue.put_nowait(None)
+        await app._bridge_segments()
 
-            transcriber_queue.put_nowait(None)
-            await app._bridge_segments()
-
-        asyncio.get_event_loop().run_until_complete(run())
         sentinel = app._aggregator.output_queue.get_nowait()
         assert sentinel is None
 
@@ -504,98 +493,86 @@ class TestConsumeSegments:
         from autonote.realtime.app import RealtimeApp
         return RealtimeApp(api_key="test", model=None, title="Test")
 
-    def test_consume_aggregated_turn_calls_context_manager(self, tmp_path):
+    async def test_consume_aggregated_turn_calls_context_manager(self, tmp_path):
+        from autonote.realtime.aggregator import TurnAggregator
+
+        app = self._make_app()
+        called_turns = []
+        app._aggregator = TurnAggregator()
+        app._transcript_path = tmp_path / "transcript.jsonl"
+
+        async def fake_on_new_turn(turn):
+            called_turns.append(turn)
+
+        mock_cm = MagicMock()
+        mock_cm.on_new_turn = fake_on_new_turn
+        app._context_manager = mock_cm
+        app._handle_event = AsyncMock()
+
+        turn = AggregatedTurn(
+            speaker="Me", text="Full sentence", timestamp_start=0.0, timestamp_end=2.0,
+            segment_count=1
+        )
+        app._aggregator.output_queue.put_nowait(turn)
+        app._aggregator.output_queue.put_nowait(None)
+
+        await app._consume_segments()
+
+        assert len(called_turns) == 1
+        called_turn = called_turns[0]
+        assert isinstance(called_turn, AggregatedTurn)
+        assert called_turn.speaker == "Me"
+        assert called_turn.text == "Full sentence"
+
+    async def test_consume_partial_skips_context_manager(self):
         from autonote.realtime.aggregator import TurnAggregator
 
         app = self._make_app()
         called_segments = []
+        app._aggregator = TurnAggregator()
 
-        async def run():
-            app._aggregator = TurnAggregator()
-            app._transcript_path = tmp_path / "transcript.jsonl"
+        async def fake_on_new_segment(seg):
+            called_segments.append(seg)
 
-            async def fake_on_new_segment(seg):
-                called_segments.append(seg)
+        mock_cm = MagicMock()
+        mock_cm.on_new_segment = fake_on_new_segment
+        app._context_manager = mock_cm
+        app._handle_event = AsyncMock()
 
-            mock_cm = MagicMock()
-            mock_cm.on_new_segment = fake_on_new_segment
-            app._context_manager = mock_cm
-            app._handle_event = AsyncMock()
+        partial = TranscriptSegment(
+            speaker="Them", text="par", timestamp_start=0.0, timestamp_end=0.3, is_partial=True
+        )
+        app._aggregator.output_queue.put_nowait(partial)
+        app._aggregator.output_queue.put_nowait(None)
 
-            turn = AggregatedTurn(
-                speaker="Me", text="Full sentence", timestamp_start=0.0, timestamp_end=2.0,
-                segment_count=1
-            )
-            app._aggregator.output_queue.put_nowait(turn)
-            app._aggregator.output_queue.put_nowait(None)
+        await app._consume_segments()
 
-            await app._consume_segments()
-
-        asyncio.get_event_loop().run_until_complete(run())
-
-        assert len(called_segments) == 1
-        called_segment = called_segments[0]
-        assert isinstance(called_segment, TranscriptSegment)
-        assert called_segment.speaker == "Me"
-        assert called_segment.text == "Full sentence"
-        assert called_segment.is_partial is False
-
-    def test_consume_partial_skips_context_manager(self):
-        from autonote.realtime.aggregator import TurnAggregator
-
-        app = self._make_app()
-        called_segments = []
-
-        async def run():
-            app._aggregator = TurnAggregator()
-
-            async def fake_on_new_segment(seg):
-                called_segments.append(seg)
-
-            mock_cm = MagicMock()
-            mock_cm.on_new_segment = fake_on_new_segment
-            app._context_manager = mock_cm
-            app._handle_event = AsyncMock()
-
-            partial = TranscriptSegment(
-                speaker="Them", text="par", timestamp_start=0.0, timestamp_end=0.3, is_partial=True
-            )
-            app._aggregator.output_queue.put_nowait(partial)
-            app._aggregator.output_queue.put_nowait(None)
-
-            await app._consume_segments()
-
-        asyncio.get_event_loop().run_until_complete(run())
         assert len(called_segments) == 0
 
-    def test_consume_aggregated_turn_writes_transcript(self, tmp_path):
+    async def test_consume_aggregated_turn_writes_transcript(self, tmp_path):
         from autonote.realtime.aggregator import TurnAggregator
 
         app = self._make_app()
+        app._aggregator = TurnAggregator()
+        transcript_path = tmp_path / "transcript.jsonl"
+        app._transcript_path = transcript_path
 
-        async def run():
-            app._aggregator = TurnAggregator()
-            transcript_path = tmp_path / "transcript.jsonl"
-            app._transcript_path = transcript_path
+        async def noop_on_new_turn(turn):
+            pass
 
-            async def noop_on_new_segment(seg):
-                pass
+        mock_cm = MagicMock()
+        mock_cm.on_new_turn = noop_on_new_turn
+        app._context_manager = mock_cm
+        app._handle_event = AsyncMock()
 
-            mock_cm = MagicMock()
-            mock_cm.on_new_segment = noop_on_new_segment
-            app._context_manager = mock_cm
-            app._handle_event = AsyncMock()
+        turn = AggregatedTurn(
+            speaker="Them", text="Agreed on timeline", timestamp_start=10.0,
+            timestamp_end=13.0, segment_count=2
+        )
+        app._aggregator.output_queue.put_nowait(turn)
+        app._aggregator.output_queue.put_nowait(None)
 
-            turn = AggregatedTurn(
-                speaker="Them", text="Agreed on timeline", timestamp_start=10.0,
-                timestamp_end=13.0, segment_count=2
-            )
-            app._aggregator.output_queue.put_nowait(turn)
-            app._aggregator.output_queue.put_nowait(None)
-
-            await app._consume_segments()
-
-        asyncio.get_event_loop().run_until_complete(run())
+        await app._consume_segments()
 
         lines = (tmp_path / "transcript.jsonl").read_text().splitlines()
         assert len(lines) == 1
@@ -603,27 +580,24 @@ class TestConsumeSegments:
         assert record["speaker"] == "Them"
         assert record["text"] == "Agreed on timeline"
 
-    def test_consume_stops_on_none_sentinel(self):
+    async def test_consume_stops_on_none_sentinel(self):
         from autonote.realtime.aggregator import TurnAggregator
 
         app = self._make_app()
         called_segments = []
+        app._aggregator = TurnAggregator()
 
-        async def run():
-            app._aggregator = TurnAggregator()
+        async def fake_on_new_segment(seg):
+            called_segments.append(seg)
 
-            async def fake_on_new_segment(seg):
-                called_segments.append(seg)
+        mock_cm = MagicMock()
+        mock_cm.on_new_segment = fake_on_new_segment
+        app._context_manager = mock_cm
+        app._handle_event = AsyncMock()
 
-            mock_cm = MagicMock()
-            mock_cm.on_new_segment = fake_on_new_segment
-            app._context_manager = mock_cm
-            app._handle_event = AsyncMock()
+        app._aggregator.output_queue.put_nowait(None)
+        await app._consume_segments()
 
-            app._aggregator.output_queue.put_nowait(None)
-            await app._consume_segments()
-
-        asyncio.get_event_loop().run_until_complete(run())
         assert len(called_segments) == 0
 
 
