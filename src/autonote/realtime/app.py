@@ -11,8 +11,10 @@ Orchestrates: Recorder → Transcriber → ContextManager → TUI updates.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
+from pathlib import Path
 from typing import Optional
 
 from rich.text import Text
@@ -113,6 +115,34 @@ class AlertsPanel(Static):
         self.display = False  # Hidden until first alert
 
 
+class DebugLog(RichLog):
+    """Timestamped debug log for pipeline events."""
+
+    DEFAULT_CSS = """
+    DebugLog {
+        border: solid $surface-lighten-2;
+        border-title-color: $text-muted;
+        scrollbar-size: 1 1;
+        height: 1fr;
+        min-height: 6;
+    }
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(highlight=False, markup=True, wrap=True, **kwargs)
+        self.border_title = "Debug  [dim](d=export)[/dim]"
+        self._lines: list[str] = []
+
+    def log(self, msg: str, level: str = "info") -> None:
+        ts = time.strftime("%H:%M:%S")
+        color = {"info": "dim", "ok": "green", "warn": "yellow", "error": "red"}.get(level, "dim")
+        self._lines.append(f"[{ts}] {msg}")
+        self.write(Text.from_markup(f"[dim]{ts}[/dim] [{color}]{msg}[/{color}]"))
+
+    def export(self) -> str:
+        return "\n".join(self._lines)
+
+
 class StatusLine(Static):
     """Bottom status bar showing recording stats."""
 
@@ -140,7 +170,6 @@ class RealtimeApp(App):
     Args:
         api_key: AssemblyAI API key (overrides config).
         model: LLM model/preset for reasoning (overrides config).
-        save_recordings: Whether to save WAV files.
         title: Meeting title for metadata.
     """
 
@@ -150,8 +179,8 @@ class RealtimeApp(App):
     DEFAULT_CSS = """
     Screen {
         layout: grid;
-        grid-size: 2 2;
-        grid-columns: 2fr 1fr;
+        grid-size: 3 2;
+        grid-columns: 2fr 1fr 1fr;
         grid-rows: 1fr auto;
     }
 
@@ -163,8 +192,12 @@ class RealtimeApp(App):
         row-span: 1;
     }
 
+    #debug {
+        row-span: 1;
+    }
+
     #input-bar {
-        column-span: 2;
+        column-span: 3;
         dock: bottom;
         height: 3;
     }
@@ -177,6 +210,7 @@ class RealtimeApp(App):
     BINDINGS = [
         Binding("q", "quit", "Quit", priority=True),
         Binding("r", "request_reply", "Reply Suggestions", show=True),
+        Binding("d", "export_debug", "Export Debug", show=True),
         Binding("ctrl+c", "quit", "Stop Recording", priority=True, show=False),
     ]
 
@@ -185,13 +219,11 @@ class RealtimeApp(App):
         *,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
-        save_recordings: bool = False,
         title: str = "",
     ) -> None:
         super().__init__()
         self._api_key = api_key
         self._model = model
-        self._save_recordings = save_recordings
         self._meeting_title = title
 
         # Pipeline objects — created in on_mount
@@ -201,6 +233,7 @@ class RealtimeApp(App):
         self._pipeline_task: Optional[asyncio.Task] = None
         self._consumer_task: Optional[asyncio.Task] = None
         self._status_task: Optional[asyncio.Task] = None
+        self._transcript_path: Optional[Path] = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -210,6 +243,7 @@ class RealtimeApp(App):
                 yield SummaryPanel(id="summary")
                 yield ActionItemsPanel(id="action-items")
                 yield AlertsPanel(id="alerts")
+            yield DebugLog(id="debug")
         yield Input(placeholder="Ask a question about the meeting... (Enter to send)", id="prompt-input")
         yield StatusLine(id="status")
         yield Footer()
@@ -217,6 +251,13 @@ class RealtimeApp(App):
     async def on_mount(self) -> None:
         """Start the recording pipeline when the app mounts."""
         self._start_pipeline()
+
+    def _debug(self, msg: str, level: str = "info") -> None:
+        """Write a timestamped message to the debug panel."""
+        try:
+            self.query_one("#debug", DebugLog).log(msg, level)
+        except Exception:
+            pass
 
     @work(exclusive=True, thread=False)
     async def _start_pipeline(self) -> None:
@@ -231,38 +272,53 @@ class RealtimeApp(App):
 
         try:
             # 1. Check system dependencies
+            self._debug("Checking system dependencies...")
             status.update("Checking dependencies...")
             ok, errors = await RealtimeRecorder.check_dependencies()
             if not ok:
+                for err in errors:
+                    self._debug(f"Missing dep: {err}", "error")
                 status.update(f"[red]Missing dependencies: {'; '.join(errors)}[/red]")
                 return
+            self._debug("Dependencies OK", "ok")
 
             # 2. Start recorder
+            self._debug("Starting audio capture...")
             status.update("Starting audio capture...")
-            self._recorder = RealtimeRecorder(save_to_file=self._save_recordings)
+            self._recorder = RealtimeRecorder(save_to_file=True)
             await self._recorder.start(title=self._meeting_title)
 
+            if self._recorder.meeting_dir:
+                self._transcript_path = Path(self._recorder.meeting_dir) / "transcript.jsonl"
+                self._debug(f"Transcript → {self._transcript_path}", "ok")
+
             mode = "mic + system" if self._recorder.has_monitor else "mic only"
+            self._debug(f"Recorder started ({mode})", "ok")
             transcript_log.write(
                 Text(f"Recording started ({mode}). Connecting to AssemblyAI...", style="dim italic")
             )
 
             # 3. Start transcriber
+            self._debug("Connecting to AssemblyAI WebSocket...")
             status.update("Connecting to AssemblyAI...")
             monitor_q = self._recorder.monitor_queue if self._recorder.has_monitor else None
             self._transcriber = AAITranscriber(
                 mic_queue=self._recorder.mic_queue,
                 monitor_queue=monitor_q,
                 api_key=self._api_key,
+                on_debug=self._debug,
             )
             await self._transcriber.start()
+            self._debug("AssemblyAI connected", "ok")
 
             # 4. Set up reasoning engine
+            self._debug(f"Loading LLM dispatcher (model={self._model or 'default'})...")
             dispatcher = LLMDispatcher(model=self._model)
             self._context_manager = ContextManager(
                 dispatcher=dispatcher,
                 on_event=self._handle_event,
             )
+            self._debug("Reasoning engine ready", "ok")
 
             transcript_log.write(
                 Text("Connected. Listening...\n", style="bold green")
@@ -272,8 +328,10 @@ class RealtimeApp(App):
             # 5. Start consumer loop and status updater
             self._consumer_task = asyncio.create_task(self._consume_segments())
             self._status_task = asyncio.create_task(self._update_status_loop())
+            self._debug("Pipeline running — waiting for speech", "ok")
 
         except Exception as exc:
+            self._debug(f"Pipeline error: {exc}", "error")
             status.update(f"[red]Pipeline error: {exc}[/red]")
             logger.error("Pipeline startup failed: %s", exc, exc_info=True)
 
@@ -282,15 +340,37 @@ class RealtimeApp(App):
         assert self._transcriber is not None
         assert self._context_manager is not None
 
+        segment_count = 0
         while True:
             segment = await self._transcriber.segment_queue.get()
             if segment is None:
+                self._debug("Transcriber segment queue closed", "warn")
                 break
             # Skip partials for context manager, but still display them
             if segment.is_partial:
                 await self._handle_event(segment)
             else:
+                segment_count += 1
+                self._debug(f"Segment #{segment_count} [{segment.speaker}]: {segment.text[:60]}")
+                self._append_transcript(segment)
                 await self._context_manager.on_new_segment(segment)
+
+    def _append_transcript(self, segment: TranscriptSegment) -> None:
+        """Append a final TranscriptSegment as a JSON line to the transcript file."""
+        if self._transcript_path is None:
+            return
+        try:
+            record = {
+                "speaker": segment.speaker,
+                "text": segment.text,
+                "start": round(segment.timestamp_start, 3),
+                "end": round(segment.timestamp_end, 3),
+                "wall_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            with self._transcript_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception as exc:
+            logger.warning("Failed to write transcript line: %s", exc)
 
     async def _handle_event(self, event: RealtimeEvent) -> None:
         """Route a realtime event to the appropriate TUI widget."""
@@ -422,6 +502,19 @@ class RealtimeApp(App):
         if self._context_manager:
             asyncio.create_task(self._context_manager.handle_reply_request())
 
+    async def action_export_debug(self) -> None:
+        """Handle the 'd' key — export debug log to a timestamped file."""
+        import pathlib
+        debug_log = self.query_one("#debug", DebugLog)
+        content = debug_log.export()
+        if not content:
+            self._debug("Nothing to export yet.", "warn")
+            return
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        path = pathlib.Path(f"autonote_debug_{ts}.txt")
+        path.write_text(content)
+        self._debug(f"Exported to {path.resolve()}", "ok")
+
     async def action_quit(self) -> None:
         """Graceful shutdown."""
         status = self.query_one("#status", StatusLine)
@@ -446,14 +539,12 @@ def run_realtime_app(
     *,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
-    save_recordings: bool = False,
     title: str = "",
 ) -> None:
     """Entry point for ``autonote realtime``."""
     app = RealtimeApp(
         api_key=api_key,
         model=model,
-        save_recordings=save_recordings,
         title=title,
     )
     app.run()

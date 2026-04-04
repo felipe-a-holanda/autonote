@@ -510,6 +510,11 @@ class RealtimeRecorder:
         return self._is_recording
 
     @property
+    def meeting_dir(self) -> Optional[str]:
+        """Path to the active meeting directory (set only when save_to_file=True)."""
+        return self._meeting_dir
+
+    @property
     def has_monitor(self) -> bool:
         """Whether a monitor (system audio) stream is active."""
         return self._monitor_process is not None

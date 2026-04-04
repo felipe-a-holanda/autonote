@@ -182,7 +182,6 @@ def setup_parser() -> argparse.ArgumentParser:
     realtime_parser.add_argument("-t", "--title", help="Meeting title")
     realtime_parser.add_argument("-k", "--api-key", help="AssemblyAI API key")
     realtime_parser.add_argument("-m", "--model", help="LLM model or preset for reasoning (fast, smart, cheap, local)")
-    realtime_parser.add_argument("--save", action="store_true", help="Save WAV recordings to disk")
 
     return parser
 
@@ -448,7 +447,6 @@ def cmd_realtime(args):
     run_realtime_app(
         api_key=getattr(args, 'api_key', None),
         model=getattr(args, 'model', None),
-        save_recordings=getattr(args, 'save', False),
         title=getattr(args, 'title', '') or '',
     )
 
