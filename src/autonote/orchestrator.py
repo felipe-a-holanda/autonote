@@ -25,12 +25,19 @@ def _slugify(title: str, max_len: int = 60) -> str:
     return s or "meeting"
 
 
+_BOILERPLATE_HEADINGS = {
+    "meeting summary", "action items", "overview", "summary",
+    "next steps", "attendees", "agenda", "notes",
+}
+
+
 def _resolve_vault_title(summary_file: str | None, time: str) -> str:
     """
     Title priority:
     1. LLM-inferred title from frontmatter (populated by extract_metadata)
     2. User-provided tag from _metadata.json as fallback
-    3. Time as final fallback
+    3. First non-boilerplate H1 heading in the file
+    4. Time as final fallback
     """
     if summary_file:
         path = Path(summary_file)
@@ -38,12 +45,12 @@ def _resolve_vault_title(summary_file: str | None, time: str) -> str:
             from autonote.obsidian.frontmatter import parse_existing_frontmatter
             content = path.read_text(encoding="utf-8")
             fm, _ = parse_existing_frontmatter(content)
-            
+
             # Priority 1: LLM-inferred title from frontmatter
             llm_title = (fm.get("title") or "").strip()
             if llm_title:
                 return llm_title
-            
+
             # Priority 2: User tag from _metadata.json (read it here as fallback)
             import json
             metadata_file = path.parent / f"{path.stem.replace('_summary', '')}_metadata.json"
@@ -55,7 +62,14 @@ def _resolve_vault_title(summary_file: str | None, time: str) -> str:
                         return user_tag
                 except (json.JSONDecodeError, IOError):
                     pass
-    
+
+            # Priority 3: First non-boilerplate H1 heading in the document
+            for line in content.splitlines():
+                if line.startswith("# "):
+                    heading = line[2:].strip()
+                    if heading.lower() not in _BOILERPLATE_HEADINGS:
+                        return heading
+
     return time
 
 
