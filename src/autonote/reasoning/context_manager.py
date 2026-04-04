@@ -99,6 +99,8 @@ class MeetingState:
 
 # Type for the event callback — receives any RealtimeEvent
 EventCallback = Callable[[RealtimeEvent], Awaitable[None]]
+# Type for the debug callback — mirrors TUI's _debug(msg, level)
+DebugCallback = Callable[[str, str], None]
 
 
 class ContextManager:
@@ -125,6 +127,7 @@ class ContextManager:
         dispatcher: LLMDispatcher,
         on_event: EventCallback,
         *,
+        on_debug: Optional[DebugCallback] = None,
         summary_every_n: Optional[int] = None,
         action_scan_every_n: Optional[int] = None,
         summary_every_n_turns: Optional[int] = None,
@@ -138,6 +141,7 @@ class ContextManager:
         )
         self.dispatcher = dispatcher
         self.on_event = on_event
+        self._on_debug = on_debug
         self._running_tasks: set[asyncio.Task] = set()
         self._last_contradiction_check: float = time.time()
 
@@ -194,6 +198,13 @@ class ContextManager:
         self.state.add_turn(turn)
         await self.on_event(turn)
 
+        n_turns = len(self.state.turns)
+        self._debug(
+            f"Turn #{n_turns} [{turn.speaker}] — "
+            f"summary in {self.SUMMARY_EVERY_N_TURNS - self.state.turns_since_last_summary} turns, "
+            f"actions in {self.ACTION_SCAN_EVERY_N_TURNS - self.state.turns_since_last_action_scan} turns"
+        )
+
         if self.state.turns_since_last_summary >= self.SUMMARY_EVERY_N_TURNS:
             self._fire_task(self._run_summary())
             self.state.turns_since_last_summary = 0
@@ -209,6 +220,7 @@ class ContextManager:
 
     async def handle_custom_prompt(self, prompt: str) -> None:
         """Run a user's freeform prompt against the meeting context."""
+        self._debug(f"LLM: custom prompt → {prompt[:60]}", "info")
         try:
             timestamp = (
                 self.state.segments[-1].timestamp_end if self.state.segments else 0.0
@@ -218,9 +230,28 @@ class ContextManager:
                 user_prompt=prompt,
                 timestamp=timestamp,
             )
+            self._debug("LLM: custom prompt answered", "ok")
             await self.on_event(result)
         except Exception as exc:
+            self._debug(f"LLM: custom prompt failed — {exc}", "error")
             logger.warning("Custom prompt failed: %s", exc)
+
+    async def handle_summary_request(self) -> None:
+        """Manually trigger a summary update."""
+        self.state.turns_since_last_summary = self.SUMMARY_EVERY_N_TURNS
+        self._fire_task(self._run_summary())
+        self.state.turns_since_last_summary = 0
+
+    async def handle_action_items_request(self) -> None:
+        """Manually trigger an action items scan."""
+        self.state.turns_since_last_action_scan = self.ACTION_SCAN_EVERY_N_TURNS
+        self._fire_task(self._run_action_items())
+        self.state.turns_since_last_action_scan = 0
+
+    async def handle_contradiction_request(self) -> None:
+        """Manually trigger a contradiction check."""
+        self._fire_task(self._run_contradictions())
+        self._last_contradiction_check = time.time()
 
     async def handle_reply_request(self, context_hint: str = "") -> None:
         """Generate reply suggestions based on the current meeting context."""
@@ -233,6 +264,14 @@ class ContextManager:
         except Exception as exc:
             logger.warning("Reply request failed: %s", exc)
 
+    def _debug(self, msg: str, level: str = "info") -> None:
+        if self._on_debug is not None:
+            try:
+                self._on_debug(msg, level)
+            except Exception:
+                pass
+        logger.debug(msg)
+
     def _fire_task(self, coro: Any) -> None:
         """Spawn a background task and track it for cleanup."""
         task = asyncio.create_task(coro)
@@ -240,6 +279,7 @@ class ContextManager:
         task.add_done_callback(self._running_tasks.discard)
 
     async def _run_summary(self) -> None:
+        self._debug("LLM: running summary...", "info")
         try:
             if self.state.turns:
                 new_segments = self.state.get_turn_transcript(
@@ -256,6 +296,7 @@ class ContextManager:
                 new_segments=new_segments,
             )
             self.state.current_summary = result
+            self._debug("LLM: summary updated", "ok")
             await self.on_event(
                 SummaryUpdate(
                     summary=result,
@@ -263,9 +304,11 @@ class ContextManager:
                 )
             )
         except Exception as exc:
+            self._debug(f"LLM: summary failed — {exc}", "error")
             logger.warning("Summary task failed, skipping: %s", exc)
 
     async def _run_contradictions(self) -> None:
+        self._debug("LLM: checking for contradictions...", "info")
         try:
             if self.state.turns:
                 recent_transcript = self.state.get_turn_transcript(last_n=20)
@@ -275,12 +318,15 @@ class ContextManager:
                 current_summary=self.state.current_summary,
                 recent_transcript=recent_transcript,
             )
+            self._debug(f"LLM: contradiction check done ({len(alerts)} alerts)", "ok")
             for alert in alerts:
                 await self.on_event(alert)
         except Exception as exc:
+            self._debug(f"LLM: contradiction check failed — {exc}", "error")
             logger.warning("Contradiction check failed, skipping: %s", exc)
 
     async def _run_action_items(self) -> None:
+        self._debug("LLM: scanning action items...", "info")
         try:
             if self.state.turns:
                 recent_transcript = self.state.get_turn_transcript(last_n=10)
@@ -292,10 +338,12 @@ class ContextManager:
                 existing_items=self.state.action_items,
             )
             self.state.action_items = updated_items
+            self._debug(f"LLM: action items done ({len(updated_items)} items)", "ok")
             await self.on_event(
                 ActionItemsUpdate(items=self.state.action_items)
             )
         except Exception as exc:
+            self._debug(f"LLM: action items failed — {exc}", "error")
             logger.warning("Action items task failed, skipping: %s", exc)
 
     async def shutdown(self) -> None:

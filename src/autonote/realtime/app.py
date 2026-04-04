@@ -234,7 +234,10 @@ class RealtimeApp(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit", priority=True),
-        Binding("r", "request_reply", "Reply Suggestions", show=True),
+        Binding("s", "request_summary", "Summary", show=True),
+        Binding("a", "request_action_items", "Action Items", show=True),
+        Binding("c", "request_contradictions", "Contradictions", show=True),
+        Binding("r", "request_reply", "Reply", show=True),
         Binding("d", "export_debug", "Export Debug", show=True),
         Binding("ctrl+c", "quit", "Stop Recording", priority=True, show=False),
     ]
@@ -375,6 +378,7 @@ class RealtimeApp(App):
             self._context_manager = ContextManager(
                 dispatcher=dispatcher,
                 on_event=self._handle_event,
+                on_debug=self._debug,
             )
             self._debug("Reasoning engine ready", "ok")
 
@@ -614,6 +618,18 @@ class RealtimeApp(App):
         log.write(Text(f"[You asked]: {prompt}", style="bold yellow"))
         # Fire the reasoning task
         asyncio.create_task(self._context_manager.handle_custom_prompt(prompt))
+
+    async def action_request_summary(self) -> None:
+        if self._context_manager:
+            asyncio.create_task(self._context_manager.handle_summary_request())
+
+    async def action_request_action_items(self) -> None:
+        if self._context_manager:
+            asyncio.create_task(self._context_manager.handle_action_items_request())
+
+    async def action_request_contradictions(self) -> None:
+        if self._context_manager:
+            asyncio.create_task(self._context_manager.handle_contradiction_request())
 
     async def action_request_reply(self) -> None:
         """Handle the 'r' key — request reply suggestions."""
