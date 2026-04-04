@@ -171,6 +171,14 @@ class StatusLine(Static):
         color: $text-muted;
         padding: 0 1;
     }
+    StatusLine.connecting {
+        background: $warning 20%;
+        color: $warning;
+    }
+    StatusLine.ready {
+        background: $success 10%;
+        color: $success;
+    }
     """
 
     def __init__(self, **kwargs) -> None:
@@ -254,6 +262,10 @@ class RealtimeApp(App):
         self._status_task: Optional[asyncio.Task] = None
         self._transcript_path: Optional[Path] = None
 
+        # Connection state tracking
+        self._sessions_ready: set[str] = set()
+        self._expected_sessions: set[str] = set()
+
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
@@ -279,6 +291,25 @@ class RealtimeApp(App):
             self.query_one("#debug", DebugLog).log(msg, level)
         except Exception:
             pass
+
+    def _on_session_begin(self, speaker_label: str) -> None:
+        """Called (thread-safe) when an AssemblyAI session is fully open."""
+        self._sessions_ready.add(speaker_label)
+        status = self.query_one("#status", StatusLine)
+        transcript_log = self.query_one("#transcript", TranscriptLog)
+
+        if self._sessions_ready >= self._expected_sessions:
+            # All expected sessions are open — switch to ready state
+            status.remove_class("connecting")
+            status.add_class("ready")
+            status.update("● Ready — listening for speech  |  q=quit  r=reply suggestions")
+            transcript_log.write(
+                Text(f"[{time.strftime('%H:%M:%S')}] Connected. Listening...\n", style="bold green")
+            )
+            self._debug("All sessions ready — transcription active", "ok")
+        else:
+            missing = self._expected_sessions - self._sessions_ready
+            status.update(f"⟳ Connecting... ({speaker_label} ready, waiting for {', '.join(missing)})")
 
     @work(exclusive=True, thread=False)
     async def _start_pipeline(self) -> None:
@@ -316,22 +347,27 @@ class RealtimeApp(App):
 
             mode = "mic + system" if self._recorder.has_monitor else "mic only"
             self._debug(f"Recorder started ({mode})", "ok")
+
+            # 3. Start transcriber — this blocks while establishing WebSocket connections
+            self._debug("Connecting to AssemblyAI WebSocket...")
+            status.add_class("connecting")
+            status.update("⟳ Connecting to AssemblyAI... (this may take ~20s)")
             transcript_log.write(
-                Text(f"Recording started ({mode}). Connecting to AssemblyAI...", style="dim italic")
+                Text(f"[{time.strftime('%H:%M:%S')}] Establishing connection to AssemblyAI...", style="yellow italic")
             )
 
-            # 3. Start transcriber
-            self._debug("Connecting to AssemblyAI WebSocket...")
-            status.update("Connecting to AssemblyAI...")
             monitor_q = self._recorder.monitor_queue if self._recorder.has_monitor else None
+            self._expected_sessions = {"Me"} | ({"Them"} if monitor_q is not None else set())
+
             self._transcriber = AAITranscriber(
                 mic_queue=self._recorder.mic_queue,
                 monitor_queue=monitor_q,
                 api_key=self._api_key,
                 on_debug=self._debug,
+                on_session_begin=self._on_session_begin,
             )
             await self._transcriber.start()
-            self._debug("AssemblyAI connected", "ok")
+            self._debug("AssemblyAI WebSocket connected — waiting for session confirmation", "ok")
 
             # 4. Set up reasoning engine
             self._debug(f"Loading LLM dispatcher (model={self._model or 'default'})...")
@@ -341,11 +377,6 @@ class RealtimeApp(App):
                 on_event=self._handle_event,
             )
             self._debug("Reasoning engine ready", "ok")
-
-            transcript_log.write(
-                Text("Connected. Listening...\n", style="bold green")
-            )
-            status.update("Recording...")
 
             # 5. Instantiate aggregator and start bridge + consumer tasks
             self._aggregator = TurnAggregator()
@@ -540,9 +571,13 @@ class RealtimeApp(App):
 
     async def _update_status_loop(self) -> None:
         """Periodically update the status bar with recording stats."""
+        first_tick = True
         while True:
             await asyncio.sleep(1.0)
             if self._recorder and self._recorder.is_recording:
+                # Only show recording stats once all sessions are ready
+                if self._sessions_ready < self._expected_sessions:
+                    continue
                 stats = self._recorder.recording_stats
                 mins = int(stats.duration_seconds) // 60
                 secs = int(stats.duration_seconds) % 60
@@ -552,8 +587,12 @@ class RealtimeApp(App):
                     if self._context_manager
                     else 0
                 )
-                self.query_one("#status", StatusLine).update(
-                    f"Recording {mins:02d}:{secs:02d} | "
+                status = self.query_one("#status", StatusLine)
+                if first_tick:
+                    status.remove_class("ready")
+                    first_tick = False
+                status.update(
+                    f"● Recording {mins:02d}:{secs:02d} | "
                     f"{mb:.1f} MB captured | "
                     f"{segments} segments | "
                     f"q=quit  r=reply suggestions"

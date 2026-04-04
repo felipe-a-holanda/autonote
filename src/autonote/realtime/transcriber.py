@@ -52,12 +52,14 @@ class RealtimeTranscriber:
         api_key: Optional[str] = None,
         on_error: Optional[Callable[[str, Exception], Awaitable[None]]] = None,
         on_debug: Optional[DebugCallback] = None,
+        on_session_begin: Optional[Callable[[str], None]] = None,
     ) -> None:
         self._mic_queue = mic_queue
         self._monitor_queue = monitor_queue
         self._api_key = api_key or config.get("ASSEMBLYAI_API_KEY", "")
         self._on_error = on_error
         self._on_debug = on_debug
+        self._on_session_begin = on_session_begin
 
         # Public output queue — consumers read TranscriptSegments from here
         self.segment_queue: asyncio.Queue[TranscriptSegment | None] = asyncio.Queue()
@@ -202,6 +204,8 @@ class RealtimeTranscriber:
         def on_begin(c, event) -> None:
             logger.info("AssemblyAI session opened (%s): id=%s", speaker_label, event.id)
             self._dbg(f"[{speaker_label}] session opened (id={event.id})", "ok")
+            if self._on_session_begin is not None and self._loop is not None:
+                self._loop.call_soon_threadsafe(self._on_session_begin, speaker_label)
 
         def on_terminate(c, event) -> None:
             logger.info("AssemblyAI session terminated (%s)", speaker_label)
