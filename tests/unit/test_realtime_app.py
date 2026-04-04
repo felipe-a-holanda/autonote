@@ -326,6 +326,58 @@ class TestAppendTranscriptAggregatedTurn:
         assert record["end"] == 8.5
         assert "wall_time" in record
 
+    def test_aggregated_turn_includes_segment_count(self, tmp_path):
+        app = self._make_app()
+        transcript_path = tmp_path / "transcript.jsonl"
+        app._transcript_path = transcript_path
+
+        turn = AggregatedTurn(
+            speaker="Me",
+            text="Three segments merged",
+            timestamp_start=0.0,
+            timestamp_end=6.0,
+            segment_count=3,
+        )
+        app._append_transcript(turn)
+
+        record = json.loads(transcript_path.read_text().strip())
+        assert record["segment_count"] == 3
+
+    def test_transcript_segment_does_not_include_segment_count(self, tmp_path):
+        app = self._make_app()
+        transcript_path = tmp_path / "transcript.jsonl"
+        app._transcript_path = transcript_path
+
+        seg = TranscriptSegment(
+            speaker="Me", text="Hello", timestamp_start=0.0, timestamp_end=1.0
+        )
+        app._append_transcript(seg)
+
+        record = json.loads(transcript_path.read_text().strip())
+        assert "segment_count" not in record
+
+    def test_aggregated_turn_jsonl_has_all_required_fields(self, tmp_path):
+        app = self._make_app()
+        transcript_path = tmp_path / "transcript.jsonl"
+        app._transcript_path = transcript_path
+
+        turn = AggregatedTurn(
+            speaker="Them",
+            text="Complete turn text",
+            timestamp_start=10.5,
+            timestamp_end=15.0,
+            segment_count=2,
+        )
+        app._append_transcript(turn)
+
+        record = json.loads(transcript_path.read_text().strip())
+        assert record["speaker"] == "Them"
+        assert record["text"] == "Complete turn text"
+        assert record["start"] == 10.5
+        assert record["end"] == 15.0
+        assert record["segment_count"] == 2
+        assert "wall_time" in record
+
     def test_segment_and_turn_both_accepted(self, tmp_path):
         app = self._make_app()
         transcript_path = tmp_path / "transcript.jsonl"
@@ -342,6 +394,10 @@ class TestAppendTranscriptAggregatedTurn:
 
         lines = transcript_path.read_text().splitlines()
         assert len(lines) == 2
+        seg_record = json.loads(lines[0])
+        turn_record = json.loads(lines[1])
+        assert "segment_count" not in seg_record
+        assert turn_record["segment_count"] == 1
 
 
 # ---------------------------------------------------------------------------

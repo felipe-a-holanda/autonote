@@ -34,7 +34,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
   - Call `aggregator.flush_remaining()` in `action_quit`
   - Manual test: lines are grouped, partials appear, stopping flushes buffer, no data loss
 
-- [ ] Task 1.4 — Update `_append_transcript()` in `app.py` to write `AggregatedTurn` records to transcript JSONL. Commit: `feat(realtime): write aggregated turns to transcript JSONL`
+- [x] Task 1.4 — Update `_append_transcript()` in `app.py` to write `AggregatedTurn` records to transcript JSONL. Commit: `feat(realtime): write aggregated turns to transcript JSONL` — 3 new tests, 373 total passing. Added `segment_count` to JSONL for `AggregatedTurn`; `TranscriptSegment` writes unchanged (backward compat).
 
   **Details:**
   - Each JSONL line: `speaker`, `text`, `start`, `end`, `segment_count`, `wall_time`

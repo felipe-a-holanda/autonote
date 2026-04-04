@@ -396,6 +396,8 @@ class RealtimeApp(App):
                 "end": round(segment.timestamp_end, 3),
                 "wall_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
+            if isinstance(segment, AggregatedTurn):
+                record["segment_count"] = segment.segment_count
             with self._transcript_path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
         except Exception as exc:
