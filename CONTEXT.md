@@ -3,8 +3,17 @@
 
 ## Estado Atual
 - **Fase**: 3 — Local VAD Integration
-- **Última tarefa**: Task 3.1 — Move SileroVAD into autonote.realtime package
-- **Testes passando**: 439
+- **Última tarefa**: Task 3.2 — Create VADMonitor async worker
+- **Testes passando**: 458
+
+## Decisões Técnicas (Task 3.2)
+- `VADMonitor` in `vad_monitor.py`: `__init__(speaker, vad, input_queue, output_queue, silence_threshold=1.5, sample_rate=16000)`.
+- `run()` is async; reads bytes or None sentinel from input_queue.
+- `_process_chunk(raw: bytes)` converts s16le→float32, buffers, processes in 512-sample windows via `_process_window()`.
+- `_process_window()` calls `vad.is_speech()`, advances `_sample_count`, uses `_silence_start_sample` to accumulate silence duration before emitting `speech_end`.
+- Silence timer resets when speech resumes before threshold is crossed.
+- `torch` not imported in vad_monitor.py; tests mock `SileroVAD.is_speech` directly via `MagicMock`.
+- `silence_duration` in `speech_end` = samples from first silent window / sample_rate (fires at first window where accumulated silence >= threshold).
 
 ## Decisões Técnicas (Task 3.1)
 - `SpeechStateEvent` added to `models.py` with `type="speech_state_event"`, `event_type: Literal["speech_start","speech_end"]`, `silence_duration: Optional[float]` (populated on speech_end).
@@ -55,6 +64,8 @@
 - `asyncio.run()` in tests breaks subsequent tests that call `asyncio.get_event_loop()` — use `run_until_complete()` instead.
 
 ## Arquivos Críticos
+- `src/autonote/realtime/vad_monitor.py` — new: `VADMonitor` async worker
+- `tests/unit/test_vad_monitor.py` — 19 tests for `VADMonitor`
 - `src/autonote/realtime/vad.py` — new: `SileroVAD` wrapper and `SpeechSegment` dataclass
 - `tests/unit/test_vad.py` — 17 tests for `SpeechStateEvent` and `SileroVAD`
 - `src/autonote/realtime/models.py` — added `AggregatedTurn`, `SpeechStateEvent`, updated `RealtimeEvent` union

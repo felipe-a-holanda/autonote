@@ -89,7 +89,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
   - Add `SpeechStateEvent` model to `models.py`: `speaker`, `event_type` (speech_start | speech_end), `timestamp`, `silence_duration`
   - Tests (new `tests/unit/test_vad.py`): model loads, `is_speech()` returns True/False correctly, `SpeechStateEvent` serialization
 
-- [ ] Task 3.2 — Create `VADMonitor` async worker in `src/autonote/realtime/vad_monitor.py`. Commit: `feat(realtime): add VADMonitor for real-time speech state tracking`
+- [x] Task 3.2 — Create `VADMonitor` async worker in `src/autonote/realtime/vad_monitor.py`. Commit: `feat(realtime): add VADMonitor for real-time speech state tracking` — 19 new tests, 458 total passing. Reads s16le PCM bytes from input queue, buffers into 512-sample windows, runs SileroVAD per window, tracks speech/silence state machine, emits SpeechStateEvent on transitions; silence_threshold default 1.5s.
 
   **Details:**
   - Reads raw PCM chunks from a queue (tee'd from recorder)
