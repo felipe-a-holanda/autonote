@@ -149,6 +149,55 @@ class TestMeetingState:
         assert state.turns_since_last_summary == 0
         assert state.turns_since_last_action_scan == 0
 
+    def test_get_turn_transcript_empty(self):
+        state = MeetingState(session_id="s1", start_time=0.0)
+        assert state.get_turn_transcript() == ""
+
+    def test_get_turn_transcript_single_turn(self):
+        state = MeetingState(session_id="s1", start_time=0.0)
+        state.add_turn(make_turn("Hello world", speaker="Me"))
+        text = state.get_turn_transcript()
+        assert text == "Me: Hello world"
+
+    def test_get_turn_transcript_multiple_turns(self):
+        state = MeetingState(session_id="s1", start_time=0.0)
+        state.add_turn(make_turn("First", speaker="Me"))
+        state.add_turn(make_turn("Second", speaker="Them"))
+        text = state.get_turn_transcript()
+        assert "Me: First" in text
+        assert "Them: Second" in text
+
+    def test_get_turn_transcript_last_n(self):
+        state = MeetingState(session_id="s1", start_time=0.0)
+        for i in range(5):
+            state.add_turn(make_turn(f"msg{i}", speaker="Me"))
+        text = state.get_turn_transcript(last_n=2)
+        assert "msg3" in text
+        assert "msg4" in text
+        assert "msg0" not in text
+
+    def test_get_turn_transcript_last_n_none_returns_all(self):
+        state = MeetingState(session_id="s1", start_time=0.0)
+        for i in range(3):
+            state.add_turn(make_turn(f"msg{i}", speaker="Me"))
+        text = state.get_turn_transcript(last_n=None)
+        assert "msg0" in text
+        assert "msg1" in text
+        assert "msg2" in text
+
+    def test_get_full_context_uses_turn_transcript_when_turns_available(self):
+        state = MeetingState(session_id="s1", start_time=0.0)
+        state.add_turn(make_turn("Turn text", speaker="Me"))
+        ctx = state.get_full_context()
+        assert "Me: Turn text" in ctx
+
+    def test_get_full_context_falls_back_to_segment_transcript_when_no_turns(self):
+        state = MeetingState(session_id="s1", start_time=0.0)
+        state.add_segment(make_segment("Segment text", speaker="Me"))
+        ctx = state.get_full_context()
+        assert "[Me @ 0s]: Segment text" in ctx
+        assert "Me: Segment text" not in ctx
+
 
 # ---------------------------------------------------------------------------
 # ContextManager
@@ -273,6 +322,50 @@ class TestContextManager:
             for i in range(2):
                 await cm.on_new_segment(make_segment(f"s{i}", start=float(i), end=float(i+1)))
         assert cm.state.segments_since_last_summary == 0
+
+    async def test_run_summary_uses_turn_transcript_when_turns_available(self):
+        cm, received = self._make_cm()
+        cm.state.add_turn(make_turn("Hello from Me", speaker="Me", start=0.0, end=2.0))
+        captured: dict = {}
+        async def fake_execute(**kwargs):
+            captured.update(kwargs)
+            return "Summary"
+        with patch.object(cm._summary_worker, "execute", new=AsyncMock(side_effect=fake_execute)):
+            await cm._run_summary()
+        assert "Me: Hello from Me" in captured.get("new_segments", "")
+
+    async def test_run_summary_falls_back_to_segment_transcript_when_no_turns(self):
+        cm, received = self._make_cm()
+        cm.state.add_segment(make_segment("Seg text", speaker="Me", start=0.0, end=1.0))
+        captured: dict = {}
+        async def fake_execute(**kwargs):
+            captured.update(kwargs)
+            return "Summary"
+        with patch.object(cm._summary_worker, "execute", new=AsyncMock(side_effect=fake_execute)):
+            await cm._run_summary()
+        assert "[Me @ 0s]: Seg text" in captured.get("new_segments", "")
+
+    async def test_run_action_items_uses_turn_transcript_when_turns_available(self):
+        cm, _ = self._make_cm()
+        cm.state.add_turn(make_turn("Action item turn", speaker="Them", start=0.0, end=2.0))
+        captured: dict = {}
+        async def fake_execute(**kwargs):
+            captured.update(kwargs)
+            return []
+        with patch.object(cm._action_item_worker, "execute", new=AsyncMock(side_effect=fake_execute)):
+            await cm._run_action_items()
+        assert "Them: Action item turn" in captured.get("recent_transcript", "")
+
+    async def test_run_contradictions_uses_turn_transcript_when_turns_available(self):
+        cm, _ = self._make_cm()
+        cm.state.add_turn(make_turn("Contradiction turn", speaker="Me", start=0.0, end=2.0))
+        captured: dict = {}
+        async def fake_execute(**kwargs):
+            captured.update(kwargs)
+            return []
+        with patch.object(cm._contradiction_worker, "execute", new=AsyncMock(side_effect=fake_execute)):
+            await cm._run_contradictions()
+        assert "Me: Contradiction turn" in captured.get("recent_transcript", "")
 
 
 # ---------------------------------------------------------------------------

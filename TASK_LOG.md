@@ -71,7 +71,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
   - Contradiction check remains time-based (every 120s)
   - Tests: summary triggers after 5 turns, action items after 3 turns, contradiction still time-based
 
-- [ ] Task 2.3 — Add `get_turn_transcript()` to `context_manager.py` and update reasoning workers to use it. Commit: `feat(reasoning): add turn-based transcript formatting for LLM context`
+- [x] Task 2.3 — Add `get_turn_transcript()` to `context_manager.py` and update reasoning workers to use it. Commit: `feat(reasoning): add turn-based transcript formatting for LLM context` — 11 new tests, 422 total passing. Added `get_turn_transcript()` to `MeetingState`; updated `get_full_context()`, `_run_summary()`, `_run_action_items()`, `_run_contradictions()` to prefer turn transcript when turns exist, falling back to segment transcript. `get_transcript_text()` unchanged.
 
   **Details:**
   - `get_turn_transcript(last_n: int | None = None) -> str` formats turns as `Speaker: text` blocks

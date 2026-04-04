@@ -3,8 +3,15 @@
 
 ## Estado Atual
 - **Fase**: 2 — Context Manager Turn Awareness
-- **Última tarefa**: Task 2.2 — Switch reasoning triggers from segment-count to turn-count
-- **Testes passando**: 411
+- **Última tarefa**: Task 2.3 — Add turn-based transcript formatting for LLM context
+- **Testes passando**: 422
+
+## Decisões Técnicas (Task 2.3)
+- `get_turn_transcript()` format is `Speaker: text` (simpler than segment's `[Speaker @ Xs]: text`).
+- `get_full_context()` prefers `get_turn_transcript(last_n=30)` when `self.turns` is non-empty.
+- `_run_summary()` uses `get_turn_transcript(last_n=SUMMARY_EVERY_N_TURNS)` when turns exist; `covered_until` taken from `turns[-1].timestamp_end` in that case.
+- `_run_contradictions()` and `_run_action_items()` similarly prefer turn transcript.
+- All three `_run_*` methods fall back to segment-based transcript if no turns exist.
 
 ## Decisões Técnicas (Task 2.2)
 - `on_new_segment()` kept as-is for backward compat; `on_new_turn()` is the new primary trigger path.

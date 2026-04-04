@@ -74,6 +74,11 @@ class MeetingState:
             for s in source
         )
 
+    def get_turn_transcript(self, last_n: Optional[int] = None) -> str:
+        """Format turns as 'Speaker: text' blocks, optionally limited to last N turns."""
+        source = self.turns[-last_n:] if last_n is not None else self.turns
+        return "\n".join(f"{t.speaker}: {t.text}" for t in source)
+
     def get_full_context(self) -> str:
         parts: list[str] = []
         if self.current_summary:
@@ -84,7 +89,11 @@ class MeetingState:
                 for a in self.action_items
             )
             parts.append(f"## Action Items\n{items_text}")
-        parts.append(f"## Recent Transcript\n{self.get_transcript_text(last_n=30)}")
+        if self.turns:
+            transcript = self.get_turn_transcript(last_n=30)
+        else:
+            transcript = self.get_transcript_text(last_n=30)
+        parts.append(f"## Recent Transcript\n{transcript}")
         return "\n\n".join(parts)
 
 
@@ -232,9 +241,16 @@ class ContextManager:
 
     async def _run_summary(self) -> None:
         try:
-            new_segments = self.state.get_transcript_text(
-                last_n=self.SUMMARY_EVERY_N_SEGMENTS
-            )
+            if self.state.turns:
+                new_segments = self.state.get_turn_transcript(
+                    last_n=self.SUMMARY_EVERY_N_TURNS
+                )
+                covered_until = self.state.turns[-1].timestamp_end
+            else:
+                new_segments = self.state.get_transcript_text(
+                    last_n=self.SUMMARY_EVERY_N_SEGMENTS
+                )
+                covered_until = self.state.segments[-1].timestamp_end if self.state.segments else 0.0
             result = await self._summary_worker.execute(
                 current_summary=self.state.current_summary,
                 new_segments=new_segments,
@@ -243,7 +259,7 @@ class ContextManager:
             await self.on_event(
                 SummaryUpdate(
                     summary=result,
-                    covered_until=self.state.segments[-1].timestamp_end,
+                    covered_until=covered_until,
                 )
             )
         except Exception as exc:
@@ -251,9 +267,13 @@ class ContextManager:
 
     async def _run_contradictions(self) -> None:
         try:
+            if self.state.turns:
+                recent_transcript = self.state.get_turn_transcript(last_n=20)
+            else:
+                recent_transcript = self.state.get_transcript_text(last_n=20)
             alerts = await self._contradiction_worker.execute(
                 current_summary=self.state.current_summary,
-                recent_transcript=self.state.get_transcript_text(last_n=20),
+                recent_transcript=recent_transcript,
             )
             for alert in alerts:
                 await self.on_event(alert)
@@ -262,9 +282,13 @@ class ContextManager:
 
     async def _run_action_items(self) -> None:
         try:
+            if self.state.turns:
+                recent_transcript = self.state.get_turn_transcript(last_n=10)
+            else:
+                recent_transcript = self.state.get_transcript_text(last_n=10)
             updated_items = await self._action_item_worker.execute(
                 full_context=self.state.get_full_context(),
-                recent_transcript=self.state.get_transcript_text(last_n=10),
+                recent_transcript=recent_transcript,
                 existing_items=self.state.action_items,
             )
             self.state.action_items = updated_items
