@@ -390,7 +390,6 @@ class RealtimeApp(App):
             elif isinstance(item, AggregatedTurn):
                 turn_count += 1
                 self._debug(f"Turn #{turn_count} [{item.speaker}]: {item.text[:60]}")
-                await self._handle_event(item)
                 self._append_transcript(item)
                 await self._context_manager.on_new_turn(item)
 
