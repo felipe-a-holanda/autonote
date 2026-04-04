@@ -24,9 +24,11 @@ from autonote.realtime.models import (
     RealtimeEvent,
 )
 from autonote.reasoning.dispatcher import LLMDispatcher
+from autonote.reasoning.mission import MissionBrief
 from autonote.reasoning.workers.summary import SummaryWorker
 from autonote.reasoning.workers.action_items import ActionItemWorker
 from autonote.reasoning.workers.contradictions import ContradictionWorker
+from autonote.reasoning.workers.coach import CoachWorker
 from autonote.reasoning.workers.custom import CustomPromptWorker
 from autonote.reasoning.workers.reply import ReplyWorker
 
@@ -50,6 +52,7 @@ class MeetingState:
     segments_since_last_action_scan: int = 0
     turns_since_last_summary: int = 0
     turns_since_last_action_scan: int = 0
+    turns_since_last_coach: int = 0
 
     def add_segment(self, segment: TranscriptSegment) -> None:
         self.segments.append(segment)
@@ -63,6 +66,7 @@ class MeetingState:
         self.speakers.add(turn.speaker)
         self.turns_since_last_summary += 1
         self.turns_since_last_action_scan += 1
+        self.turns_since_last_coach += 1
 
     def get_transcript_text(self, last_n: Optional[int] = None) -> str:
         if last_n is not None:
@@ -121,6 +125,7 @@ class ContextManager:
     SUMMARY_EVERY_N_TURNS: int = 5
     ACTION_SCAN_EVERY_N_TURNS: int = 3
     CONTRADICTION_CHECK_SECONDS: int = 120
+    COACH_EVERY_N_TURNS: int = 3
 
     def __init__(
         self,
@@ -133,6 +138,7 @@ class ContextManager:
         summary_every_n_turns: Optional[int] = None,
         action_scan_every_n_turns: Optional[int] = None,
         contradiction_check_seconds: Optional[int] = None,
+        mission_brief: Optional[MissionBrief] = None,
         session_id: str = "",
     ) -> None:
         self.state = MeetingState(
@@ -144,12 +150,14 @@ class ContextManager:
         self._on_debug = on_debug
         self._running_tasks: set[asyncio.Task] = set()
         self._last_contradiction_check: float = time.time()
+        self._mission_brief = mission_brief
 
         self._summary_worker = SummaryWorker(dispatcher)
         self._action_item_worker = ActionItemWorker(dispatcher)
         self._contradiction_worker = ContradictionWorker(dispatcher)
         self._custom_prompt_worker = CustomPromptWorker(dispatcher)
         self._reply_worker = ReplyWorker(dispatcher)
+        self._coach_worker = CoachWorker(dispatcher)
 
         if summary_every_n is not None:
             self.SUMMARY_EVERY_N_SEGMENTS = summary_every_n
@@ -161,6 +169,8 @@ class ContextManager:
             self.ACTION_SCAN_EVERY_N_TURNS = action_scan_every_n_turns
         if contradiction_check_seconds is not None:
             self.CONTRADICTION_CHECK_SECONDS = contradiction_check_seconds
+        if mission_brief is not None:
+            self.COACH_EVERY_N_TURNS = mission_brief.coach_every_n_turns
 
     async def on_new_segment(self, segment: TranscriptSegment) -> None:
         """Process a new transcript segment.
@@ -218,6 +228,10 @@ class ContextManager:
             self._fire_task(self._run_contradictions())
             self._last_contradiction_check = now
 
+        if self._mission_brief and self.state.turns_since_last_coach >= self.COACH_EVERY_N_TURNS:
+            self._fire_task(self._run_coach())
+            self.state.turns_since_last_coach = 0
+
     async def handle_custom_prompt(self, prompt: str) -> None:
         """Run a user's freeform prompt against the meeting context."""
         self._debug(f"LLM: custom prompt → {prompt[:60]}", "info")
@@ -263,6 +277,11 @@ class ContextManager:
             await self.on_event(suggestion)
         except Exception as exc:
             logger.warning("Reply request failed: %s", exc)
+
+    async def handle_coach_request(self) -> None:
+        """Manually trigger a coach suggestion (requires mission_brief to be set)."""
+        if self._mission_brief:
+            await self._run_coach()
 
     def _debug(self, msg: str, level: str = "info") -> None:
         if self._on_debug is not None:
@@ -345,6 +364,27 @@ class ContextManager:
         except Exception as exc:
             self._debug(f"LLM: action items failed — {exc}", "error")
             logger.warning("Action items task failed, skipping: %s", exc)
+
+    async def _run_coach(self) -> None:
+        self._debug("LLM: running coach...", "info")
+        try:
+            if self.state.turns:
+                recent = self.state.get_turn_transcript(last_n=5)
+                timestamp = self.state.turns[-1].timestamp_end
+            else:
+                recent = self.state.get_transcript_text(last_n=5)
+                timestamp = self.state.segments[-1].timestamp_end if self.state.segments else 0.0
+            suggestion = await self._coach_worker.execute(
+                full_context=self.state.get_full_context(),
+                recent_transcript=recent,
+                mission_brief_text=self._mission_brief.format_for_prompt(),  # type: ignore[union-attr]
+                timestamp=timestamp,
+            )
+            self._debug(f"LLM: coach done (should_speak={suggestion.should_speak}, confidence={suggestion.confidence})", "ok")
+            await self.on_event(suggestion)
+        except Exception as exc:
+            self._debug(f"LLM: coach failed — {exc}", "error")
+            logger.warning("Coach task failed, skipping: %s", exc)
 
     async def shutdown(self) -> None:
         """Cancel all running reasoning tasks."""

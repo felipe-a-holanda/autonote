@@ -117,6 +117,29 @@ The user asks: {user_prompt}
 
 Respond helpfully based on the meeting context. Be concise and actionable."""
 
+COACH_PROMPT = """\
+You are a real-time meeting coach. You have been briefed with a mission.
+
+== YOUR MISSION ==
+{mission_brief}
+
+== CURRENT MEETING STATE ==
+{full_context}
+
+== MOST RECENT EXCHANGE ==
+{recent_transcript}
+
+Based on the discussion, decide if this is the right moment to act.
+
+Respond in JSON:
+{{
+  "should_speak": true,
+  "suggestion": "What to say or do right now (or 'Stay quiet and listen')",
+  "argument_used": "Which argument from your brief is relevant, or null",
+  "reasoning": "Why now (or why not)",
+  "confidence": "high|medium|low"
+}}"""
+
 # Map task names to prompt templates for easy lookup by the dispatcher
 PROMPT_MAP: dict[str, str] = {
     "summary": PROGRESSIVE_SUMMARY,
@@ -124,4 +147,5 @@ PROMPT_MAP: dict[str, str] = {
     "contradictions": CONTRADICTION_DETECTION,
     "reply": REPLY_SUGGESTION,
     "custom": CUSTOM_PROMPT_TEMPLATE,
+    "coach": COACH_PROMPT,
 }

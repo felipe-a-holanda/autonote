@@ -27,6 +27,7 @@ from textual.widgets import Footer, Header, Input, RichLog, Static
 from autonote.realtime.models import (
     ActionItemsUpdate,
     AggregatedTurn,
+    CoachSuggestion,
     ContradictionAlert,
     CustomPromptResult,
     RealtimeEvent,
@@ -130,6 +131,26 @@ class AlertsPanel(Static):
         super().__init__("", **kwargs)
         self.border_title = "Alerts"
         self.display = False  # Hidden until first alert
+
+
+class CoachPanel(Static):
+    """Displays proactive coaching suggestions from a mission brief."""
+
+    DEFAULT_CSS = """
+    CoachPanel {
+        border: solid $success;
+        border-title-color: $text;
+        padding: 1;
+        height: auto;
+        min-height: 3;
+        max-height: 25%;
+    }
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__("", **kwargs)
+        self.border_title = "Coach  [dim](p=request)[/dim]"
+        self.display = False  # Hidden until a profile is loaded and first suggestion arrives
 
 
 class DebugLog(RichLog):
@@ -238,6 +259,7 @@ class RealtimeApp(App):
         Binding("a", "request_action_items", "Action Items", show=True),
         Binding("c", "request_contradictions", "Contradictions", show=True),
         Binding("r", "request_reply", "Reply", show=True),
+        Binding("p", "request_coach", "Coach", show=True),
         Binding("d", "export_debug", "Export Debug", show=True),
         Binding("ctrl+c", "quit", "Stop Recording", priority=True, show=False),
     ]
@@ -248,11 +270,13 @@ class RealtimeApp(App):
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         title: str = "",
+        profile=None,
     ) -> None:
         super().__init__()
         self._api_key = api_key
         self._model = model
         self._meeting_title = title
+        self._profile = profile  # Optional[MissionBrief]
 
         # Pipeline objects — created in on_mount
         self._recorder = None
@@ -279,6 +303,7 @@ class RealtimeApp(App):
                 yield SummaryPanel(id="summary")
                 yield ActionItemsPanel(id="action-items")
                 yield AlertsPanel(id="alerts")
+                yield CoachPanel(id="coach")
             yield DebugLog(id="debug")
         yield Input(placeholder="Ask a question about the meeting... (Enter to send)", id="prompt-input")
         yield StatusLine(id="status")
@@ -379,6 +404,7 @@ class RealtimeApp(App):
                 dispatcher=dispatcher,
                 on_event=self._handle_event,
                 on_debug=self._debug,
+                mission_brief=self._profile,
             )
             self._debug("Reasoning engine ready", "ok")
 
@@ -464,6 +490,8 @@ class RealtimeApp(App):
                 self._update_alerts_reply(event)
             elif isinstance(event, CustomPromptResult):
                 self._update_alerts_custom(event)
+            elif isinstance(event, CoachSuggestion):
+                self._update_coach(event)
         except Exception as exc:
             logger.warning("Error updating TUI for event %s: %s", type(event).__name__, exc)
 
@@ -567,6 +595,22 @@ class RealtimeApp(App):
         panel = self.query_one("#alerts", AlertsPanel)
         panel.display = True
         panel.update(f"[bold]Q:[/bold] {result.prompt}\n\n{result.result}")
+
+    def _update_coach(self, suggestion: CoachSuggestion) -> None:
+        panel = self.query_one("#coach", CoachPanel)
+        panel.display = True
+        confidence_color = {"high": "green", "medium": "yellow", "low": "dim"}.get(
+            suggestion.confidence, "dim"
+        )
+        speak_tag = "[bold green]SPEAK[/bold green]" if suggestion.should_speak else "[dim]WAIT[/dim]"
+        text = (
+            f"{speak_tag} [{confidence_color}]({suggestion.confidence})[/{confidence_color}]\n"
+            f"{suggestion.suggestion}\n"
+        )
+        if suggestion.argument_used:
+            text += f"[dim]Argument: {suggestion.argument_used}[/dim]\n"
+        text += f"[dim]{suggestion.reasoning}[/dim]"
+        panel.update(text)
         panel.border_title = "Custom Prompt Result"
 
     # ------------------------------------------------------------------
@@ -636,6 +680,11 @@ class RealtimeApp(App):
         if self._context_manager:
             asyncio.create_task(self._context_manager.handle_reply_request())
 
+    async def action_request_coach(self) -> None:
+        """Handle the 'p' key — request a coach suggestion (requires --profile)."""
+        if self._context_manager:
+            asyncio.create_task(self._context_manager.handle_coach_request())
+
     async def action_export_debug(self) -> None:
         """Handle the 'd' key — export debug log to a timestamped file."""
         import pathlib
@@ -678,11 +727,13 @@ def run_realtime_app(
     api_key: Optional[str] = None,
     model: Optional[str] = None,
     title: str = "",
+    profile=None,
 ) -> None:
     """Entry point for ``autonote realtime``."""
     app = RealtimeApp(
         api_key=api_key,
         model=model,
         title=title,
+        profile=profile,
     )
     app.run()

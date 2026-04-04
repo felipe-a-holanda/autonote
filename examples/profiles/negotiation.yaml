@@ -1,0 +1,14 @@
+name: "Contract Negotiation"
+goal: "Renew software contract at 20% lower cost"
+role: "Lead negotiator for Acme Corp"
+context: |
+  Renewing annual license with VendorCo. Current price $100k/yr.
+  We have a competing offer from AltVendor at $75k/yr.
+  They care about customer retention metrics.
+arguments:
+  - "AltVendor offered equivalent features at $75k"
+  - "5 years of loyalty with 0 support tickets"
+  - "Willing to sign a 3-year deal in exchange for a discount"
+  - "Our team can self-host if the price does not improve"
+instructions: "Suggest the most relevant argument when the moment is right. Stay concise and assertive but diplomatic."
+coach_every_n_turns: 3

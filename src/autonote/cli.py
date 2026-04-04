@@ -182,6 +182,7 @@ def setup_parser() -> argparse.ArgumentParser:
     realtime_parser.add_argument("-t", "--title", help="Meeting title")
     realtime_parser.add_argument("-k", "--api-key", help="AssemblyAI API key")
     realtime_parser.add_argument("-m", "--model", help="LLM model or preset for reasoning (fast, smart, cheap, local)")
+    realtime_parser.add_argument("--profile", help="Path to mission profile YAML for coach mode (e.g. examples/profiles/negotiation.yaml)")
 
     return parser
 
@@ -444,10 +445,15 @@ def cmd_full(args):
 
 def cmd_realtime(args):
     from autonote.realtime.app import run_realtime_app
+    profile = None
+    if getattr(args, 'profile', None):
+        from autonote.reasoning.mission import MissionBrief
+        profile = MissionBrief.from_yaml(args.profile)
     run_realtime_app(
         api_key=getattr(args, 'api_key', None),
         model=getattr(args, 'model', None),
         title=getattr(args, 'title', '') or '',
+        profile=profile,
     )
 
 def main():

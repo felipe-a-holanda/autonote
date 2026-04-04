@@ -119,6 +119,18 @@ class CustomPromptResult(BaseModel):
     timestamp: float
 
 
+class CoachSuggestion(BaseModel):
+    """Proactive coaching suggestion from a mission-briefed coach worker."""
+
+    type: Literal["coach_suggestion"] = "coach_suggestion"
+    should_speak: bool
+    suggestion: str
+    argument_used: Optional[str]
+    reasoning: str
+    confidence: Literal["high", "medium", "low"]
+    timestamp: float
+
+
 # ---------------------------------------------------------------------------
 # Union type for TUI event routing
 # ---------------------------------------------------------------------------
@@ -131,5 +143,6 @@ RealtimeEvent = (
     | ContradictionAlert
     | ReplySuggestion
     | CustomPromptResult
+    | CoachSuggestion
     | SpeechStateEvent
 )
