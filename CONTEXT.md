@@ -3,8 +3,15 @@
 
 ## Estado Atual
 - **Fase**: 1 — Timestamp-Based Turn Aggregation
-- **Última tarefa**: Task 1.4 — `_append_transcript()` writes `segment_count` for `AggregatedTurn`
-- **Testes passando**: 373
+- **Última tarefa**: Task 1.5 — TUI display: PartialLine widget, live partials, M:SS timestamps
+- **Testes passando**: 392
+
+## Decisões Técnicas (Task 1.5)
+- `PartialLine` is a `Static` subclass with `height: 1`; sits below `TranscriptLog` inside a `Vertical(id="transcript-container")`.
+- `_format_timestamp()` and `_speaker_style()` extracted as `@staticmethod` — pure, easily testable.
+- `_update_partial_line()` and `_clear_partial_line()` swallow exceptions (no DOM outside running app).
+- `_update_transcript()` for partials now calls `_update_partial_line()` instead of returning early.
+- `_update_transcript_turn()` calls `_clear_partial_line()` before writing to RichLog.
 
 ## Decisões Técnicas
 - `wall_time_start` / `wall_time_end` on `AggregatedTurn` are `Optional[datetime]` (not float), since they represent wall clock time rather than session-relative audio timestamps.
@@ -26,7 +33,7 @@
 ## Arquivos Críticos
 - `src/autonote/realtime/models.py` — added `AggregatedTurn`, updated `RealtimeEvent` union
 - `src/autonote/realtime/aggregator.py` — TurnAggregator implementation
-- `src/autonote/realtime/app.py` — pipeline wired with aggregator; `_bridge_segments`, `_consume_segments`, `_update_transcript_turn`
+- `src/autonote/realtime/app.py` — full pipeline with PartialLine widget, `_format_timestamp`, `_speaker_style`, `_update_partial_line`, `_clear_partial_line`
 - `tests/unit/test_realtime_models.py` — 8 tests for `AggregatedTurn`
 - `tests/unit/test_turn_aggregator.py` — 22 tests for `TurnAggregator`
-- `tests/unit/test_realtime_app.py` — 35 tests (11 new for Task 1.3 wiring)
+- `tests/unit/test_realtime_app.py` — 57 tests (19 new for Task 1.5 TUI display)

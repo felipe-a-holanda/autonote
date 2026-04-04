@@ -41,7 +41,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
   - Backward compatible format readable by post-processing tools
   - Test: `AggregatedTurn.model_dump()` produces expected JSON structure
 
-- [ ] Task 1.5 — Update TUI display in `app.py` for aggregated turns with live partial line. Commit: `feat(realtime): improve TUI display with live partials and grouped turns`
+- [x] Task 1.5 — Update TUI display in `app.py` for aggregated turns with live partial line. Commit: `feat(realtime): improve TUI display with live partials and grouped turns` — 19 new tests, 392 total passing. Added `PartialLine` widget (Static, `height: 1`); extracted `_format_timestamp()` and `_speaker_style()` as static methods; `_update_partial_line()` updates live line on each partial; `_clear_partial_line()` clears it when a completed turn arrives; `_update_transcript_turn()` now clears partial before writing.
 
   **Details:**
   - Render `AggregatedTurn` as `[M:SS] Speaker: full text`

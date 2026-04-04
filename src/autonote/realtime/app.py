@@ -50,12 +50,28 @@ class TranscriptLog(RichLog):
         border: solid $primary;
         border-title-color: $text;
         scrollbar-size: 1 1;
+        height: 1fr;
     }
     """
 
     def __init__(self, **kwargs) -> None:
         super().__init__(highlight=True, markup=True, wrap=True, **kwargs)
         self.border_title = "Transcript"
+
+
+class PartialLine(Static):
+    """Live partial transcript line — updates in place as speech is recognized."""
+
+    DEFAULT_CSS = """
+    PartialLine {
+        height: 1;
+        padding: 0 1;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__("", **kwargs)
 
 
 class SummaryPanel(Static):
@@ -241,7 +257,9 @@ class RealtimeApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
-            yield TranscriptLog(id="transcript")
+            with Vertical(id="transcript-container"):
+                yield TranscriptLog(id="transcript")
+                yield PartialLine(id="partial-line")
             with VerticalScroll(id="reasoning-container"):
                 yield SummaryPanel(id="summary")
                 yield ActionItemsPanel(id="action-items")
@@ -427,31 +445,55 @@ class RealtimeApp(App):
     # Widget updaters
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _format_timestamp(seconds: float) -> str:
+        """Format a float timestamp (seconds) as M:SS."""
+        total = int(seconds)
+        return f"{total // 60}:{total % 60:02d}"
+
+    @staticmethod
+    def _speaker_style(speaker: str) -> str:
+        return "bold cyan" if speaker == "Me" else "bold magenta"
+
+    def _update_partial_line(self, segment: TranscriptSegment) -> None:
+        """Update the live partial line widget with the current partial text."""
+        try:
+            partial_line = self.query_one("#partial-line", PartialLine)
+            text = Text()
+            text.append(f"{segment.speaker}: ", style=f"{self._speaker_style(segment.speaker)} dim italic")
+            text.append(segment.text, style="dim italic")
+            partial_line.update(text)
+        except Exception:
+            pass
+
+    def _clear_partial_line(self) -> None:
+        """Clear the live partial line (called when a completed turn is written)."""
+        try:
+            self.query_one("#partial-line", PartialLine).update("")
+        except Exception:
+            pass
+
     def _update_transcript(self, segment: TranscriptSegment) -> None:
-        log = self.query_one("#transcript", TranscriptLog)
         if segment.is_partial:
-            # For partials, we could show inline but it gets noisy.
-            # Just skip — finals will cover it.
+            self._update_partial_line(segment)
             return
+        log = self.query_one("#transcript", TranscriptLog)
         speaker = segment.speaker
-        style = "bold cyan" if speaker == "Me" else "bold magenta"
-        ts = f"{segment.timestamp_start:.0f}s"
+        ts = self._format_timestamp(segment.timestamp_start)
         text = Text()
         text.append(f"[{ts}] ", style="dim")
-        text.append(f"{speaker}: ", style=style)
+        text.append(f"{speaker}: ", style=self._speaker_style(speaker))
         text.append(segment.text)
         log.write(text)
 
     def _update_transcript_turn(self, turn: AggregatedTurn) -> None:
+        self._clear_partial_line()
         log = self.query_one("#transcript", TranscriptLog)
         speaker = turn.speaker
-        style = "bold cyan" if speaker == "Me" else "bold magenta"
-        mins = int(turn.timestamp_start) // 60
-        secs = int(turn.timestamp_start) % 60
-        ts = f"{mins}:{secs:02d}"
+        ts = self._format_timestamp(turn.timestamp_start)
         text = Text()
         text.append(f"[{ts}] ", style="dim")
-        text.append(f"{speaker}: ", style=style)
+        text.append(f"{speaker}: ", style=self._speaker_style(speaker))
         text.append(turn.text)
         log.write(text)
 

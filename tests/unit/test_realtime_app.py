@@ -651,3 +651,144 @@ class TestActionQuitAggregator:
         # Should not raise
         if app._aggregator:
             app._aggregator.flush_remaining()
+
+
+# ---------------------------------------------------------------------------
+# Task 1.5 — TUI display: PartialLine widget and timestamp formatting
+# ---------------------------------------------------------------------------
+
+class TestPartialLineWidget:
+    def test_partial_line_class_exists(self):
+        from autonote.realtime.app import PartialLine
+        assert PartialLine is not None
+
+    def test_partial_line_has_height_css(self):
+        from autonote.realtime.app import PartialLine
+        assert "height: 1" in PartialLine.DEFAULT_CSS
+
+    def test_partial_line_has_padding_css(self):
+        from autonote.realtime.app import PartialLine
+        assert "padding" in PartialLine.DEFAULT_CSS
+
+    def test_partial_line_is_static_subclass(self):
+        from autonote.realtime.app import PartialLine
+        from textual.widgets import Static
+        assert issubclass(PartialLine, Static)
+
+
+class TestFormatTimestamp:
+    def test_zero_seconds(self):
+        from autonote.realtime.app import RealtimeApp
+        assert RealtimeApp._format_timestamp(0.0) == "0:00"
+
+    def test_under_one_minute(self):
+        from autonote.realtime.app import RealtimeApp
+        assert RealtimeApp._format_timestamp(45.0) == "0:45"
+
+    def test_exactly_one_minute(self):
+        from autonote.realtime.app import RealtimeApp
+        assert RealtimeApp._format_timestamp(60.0) == "1:00"
+
+    def test_one_minute_fifteen_seconds(self):
+        from autonote.realtime.app import RealtimeApp
+        assert RealtimeApp._format_timestamp(75.9) == "1:15"
+
+    def test_seconds_zero_padded(self):
+        from autonote.realtime.app import RealtimeApp
+        assert RealtimeApp._format_timestamp(65.0) == "1:05"
+
+    def test_long_meeting(self):
+        from autonote.realtime.app import RealtimeApp
+        # 1 hour + 1 second
+        assert RealtimeApp._format_timestamp(3601.0) == "60:01"
+
+    def test_fractional_seconds_truncated(self):
+        from autonote.realtime.app import RealtimeApp
+        # 90.999 should give 1:30, not 1:31
+        assert RealtimeApp._format_timestamp(90.999) == "1:30"
+
+
+class TestSpeakerStyle:
+    def test_me_is_cyan(self):
+        from autonote.realtime.app import RealtimeApp
+        assert "cyan" in RealtimeApp._speaker_style("Me")
+
+    def test_them_is_magenta(self):
+        from autonote.realtime.app import RealtimeApp
+        assert "magenta" in RealtimeApp._speaker_style("Them")
+
+    def test_unknown_speaker_is_magenta(self):
+        from autonote.realtime.app import RealtimeApp
+        assert "magenta" in RealtimeApp._speaker_style("Unknown")
+
+
+class TestUpdatePartialLine:
+    """Test _update_partial_line and _clear_partial_line with a mocked query."""
+
+    def _make_app(self):
+        from autonote.realtime.app import RealtimeApp
+        return RealtimeApp(api_key="test")
+
+    def test_clear_partial_line_calls_update_empty(self):
+        from autonote.realtime.app import RealtimeApp, PartialLine
+
+        app = self._make_app()
+        mock_widget = MagicMock()
+
+        with patch.object(app, "query_one", return_value=mock_widget):
+            app._clear_partial_line()
+
+        mock_widget.update.assert_called_once_with("")
+
+    def test_clear_partial_line_swallows_exceptions(self):
+        from autonote.realtime.app import RealtimeApp
+
+        app = self._make_app()
+
+        with patch.object(app, "query_one", side_effect=Exception("No DOM")):
+            app._clear_partial_line()  # Should not raise
+
+    def test_update_partial_line_calls_update_with_text(self):
+        from autonote.realtime.app import RealtimeApp, PartialLine
+        from rich.text import Text
+
+        app = self._make_app()
+        mock_widget = MagicMock()
+        segment = TranscriptSegment(
+            speaker="Me", text="Hello...", timestamp_start=0.0, timestamp_end=0.5, is_partial=True
+        )
+
+        with patch.object(app, "query_one", return_value=mock_widget):
+            app._update_partial_line(segment)
+
+        mock_widget.update.assert_called_once()
+        call_arg = mock_widget.update.call_args[0][0]
+        assert isinstance(call_arg, Text)
+        assert "Hello..." in call_arg.plain
+
+    def test_update_partial_line_swallows_exceptions(self):
+        from autonote.realtime.app import RealtimeApp
+
+        app = self._make_app()
+        segment = TranscriptSegment(
+            speaker="Me", text="Hi", timestamp_start=0.0, timestamp_end=0.5, is_partial=True
+        )
+
+        with patch.object(app, "query_one", side_effect=Exception("No DOM")):
+            app._update_partial_line(segment)  # Should not raise
+
+    def test_update_partial_line_includes_speaker(self):
+        from autonote.realtime.app import RealtimeApp
+        from rich.text import Text
+
+        app = self._make_app()
+        mock_widget = MagicMock()
+        segment = TranscriptSegment(
+            speaker="Them", text="World", timestamp_start=0.0, timestamp_end=0.5, is_partial=True
+        )
+
+        with patch.object(app, "query_one", return_value=mock_widget):
+            app._update_partial_line(segment)
+
+        call_arg = mock_widget.update.call_args[0][0]
+        assert "Them" in call_arg.plain
