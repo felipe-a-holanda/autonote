@@ -53,7 +53,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
 
 ## Phase 2: Context Manager Turn Awareness
 
-- [ ] Task 2.1 — Add `turns` list to `MeetingState` in `src/autonote/reasoning/context_manager.py`. Commit: `feat(reasoning): add turn-aware state tracking to MeetingState`
+- [x] Task 2.1 — Add `turns` list to `MeetingState` in `src/autonote/reasoning/context_manager.py`. Commit: `feat(reasoning): add turn-aware state tracking to MeetingState` — 7 new tests, 399 total passing. Added `turns: list[AggregatedTurn]`, `turns_since_last_summary`, `turns_since_last_action_scan` to `MeetingState`; added `add_turn()` method; `add_segment()` unchanged. Tests added to `test_reasoning_context_manager.py`.
 
   **Details:**
   - Add `turns: list[AggregatedTurn]` to `MeetingState` dataclass

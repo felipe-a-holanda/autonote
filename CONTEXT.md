@@ -2,9 +2,14 @@
 > Atualizado automaticamente pelo agente após cada iteração.
 
 ## Estado Atual
-- **Fase**: 1 — Timestamp-Based Turn Aggregation
-- **Última tarefa**: Task 1.5 — TUI display: PartialLine widget, live partials, M:SS timestamps
-- **Testes passando**: 392
+- **Fase**: 2 — Context Manager Turn Awareness
+- **Última tarefa**: Task 2.1 — Add `turns` list and `add_turn()` to `MeetingState`
+- **Testes passando**: 399
+
+## Decisões Técnicas (Task 2.1)
+- `turns` and `turns_since_*` counters are independent from `segments` and `segments_since_*` — `add_turn()` does not touch segment counters and vice versa.
+- `add_turn()` does not update `recent_window` — that window is segment-based; turn-based window added in a later task if needed.
+- Tests added to existing `test_reasoning_context_manager.py` (not a new file) for cohesion.
 
 ## Decisões Técnicas (Task 1.5)
 - `PartialLine` is a `Static` subclass with `height: 1`; sits below `TranscriptLog` inside a `Vertical(id="transcript-container")`.

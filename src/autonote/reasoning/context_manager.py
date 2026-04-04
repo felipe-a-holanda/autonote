@@ -16,6 +16,7 @@ from typing import Callable, Awaitable, Any, Optional
 
 from autonote.realtime.models import (
     TranscriptSegment,
+    AggregatedTurn,
     ActionItem,
     SummaryUpdate,
     ActionItemsUpdate,
@@ -40,12 +41,15 @@ class MeetingState:
     start_time: float
 
     segments: list[TranscriptSegment] = field(default_factory=list)
+    turns: list[AggregatedTurn] = field(default_factory=list)
     speakers: set[str] = field(default_factory=set)
     current_summary: str = ""
     action_items: list[ActionItem] = field(default_factory=list)
     recent_window: deque = field(default_factory=lambda: deque(maxlen=50))
     segments_since_last_summary: int = 0
     segments_since_last_action_scan: int = 0
+    turns_since_last_summary: int = 0
+    turns_since_last_action_scan: int = 0
 
     def add_segment(self, segment: TranscriptSegment) -> None:
         self.segments.append(segment)
@@ -53,6 +57,12 @@ class MeetingState:
         self.speakers.add(segment.speaker)
         self.segments_since_last_summary += 1
         self.segments_since_last_action_scan += 1
+
+    def add_turn(self, turn: AggregatedTurn) -> None:
+        self.turns.append(turn)
+        self.speakers.add(turn.speaker)
+        self.turns_since_last_summary += 1
+        self.turns_since_last_action_scan += 1
 
     def get_transcript_text(self, last_n: Optional[int] = None) -> str:
         if last_n is not None:
