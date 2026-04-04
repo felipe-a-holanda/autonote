@@ -83,7 +83,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
 
 ## Phase 3: Local VAD Integration
 
-- [ ] Task 3.1 — Move `SileroVAD` from `meeting-copilot/backend/audio/vad.py` into `src/autonote/realtime/vad.py`. Commit: `refactor(realtime): move SileroVAD into autonote.realtime package`
+- [x] Task 3.1 — Move `SileroVAD` from `meeting-copilot/backend/audio/vad.py` into `src/autonote/realtime/vad.py`. Commit: `refactor(realtime): move SileroVAD into autonote.realtime package` — 17 new tests, 439 total passing. Added `SpeechStateEvent` to `models.py` and `RealtimeEvent` union; created `src/autonote/realtime/vad.py` with `SileroVAD` and `SpeechSegment`; torch mocked in tests (not a required dependency).
 
   **Details:**
   - Add `SpeechStateEvent` model to `models.py`: `speaker`, `event_type` (speech_start | speech_end), `timestamp`, `silence_duration`

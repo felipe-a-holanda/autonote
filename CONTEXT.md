@@ -2,9 +2,15 @@
 > Atualizado automaticamente pelo agente após cada iteração.
 
 ## Estado Atual
-- **Fase**: 2 — Context Manager Turn Awareness
-- **Última tarefa**: Task 2.3 — Add turn-based transcript formatting for LLM context
-- **Testes passando**: 422
+- **Fase**: 3 — Local VAD Integration
+- **Última tarefa**: Task 3.1 — Move SileroVAD into autonote.realtime package
+- **Testes passando**: 439
+
+## Decisões Técnicas (Task 3.1)
+- `SpeechStateEvent` added to `models.py` with `type="speech_state_event"`, `event_type: Literal["speech_start","speech_end"]`, `silence_duration: Optional[float]` (populated on speech_end).
+- `SpeechStateEvent` added to `RealtimeEvent` union.
+- `SileroVAD` and `SpeechSegment` created in `src/autonote/realtime/vad.py`; uses `autonote.logger` instead of stdlib `logging`.
+- `torch` is NOT added as a project dependency — lazy-imported inside `_load()`; tests mock `sys.modules["torch"]` via `patch.dict`.
 
 ## Decisões Técnicas (Task 2.3)
 - `get_turn_transcript()` format is `Speaker: text` (simpler than segment's `[Speaker @ Xs]: text`).
@@ -49,7 +55,9 @@
 - `asyncio.run()` in tests breaks subsequent tests that call `asyncio.get_event_loop()` — use `run_until_complete()` instead.
 
 ## Arquivos Críticos
-- `src/autonote/realtime/models.py` — added `AggregatedTurn`, updated `RealtimeEvent` union
+- `src/autonote/realtime/vad.py` — new: `SileroVAD` wrapper and `SpeechSegment` dataclass
+- `tests/unit/test_vad.py` — 17 tests for `SpeechStateEvent` and `SileroVAD`
+- `src/autonote/realtime/models.py` — added `AggregatedTurn`, `SpeechStateEvent`, updated `RealtimeEvent` union
 - `src/autonote/realtime/aggregator.py` — TurnAggregator implementation
 - `src/autonote/realtime/app.py` — full pipeline with PartialLine widget, `_format_timestamp`, `_speaker_style`, `_update_partial_line`, `_clear_partial_line`
 - `tests/unit/test_realtime_models.py` — 8 tests for `AggregatedTurn`

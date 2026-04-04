@@ -91,6 +91,16 @@ class ContradictionAlert(BaseModel):
     severity: Literal["low", "medium", "high"]
 
 
+class SpeechStateEvent(BaseModel):
+    """VAD-detected speech state transition for a speaker stream."""
+
+    type: Literal["speech_state_event"] = "speech_state_event"
+    speaker: str  # "Me" (mic) or "Them" (system audio)
+    event_type: Literal["speech_start", "speech_end"]
+    timestamp: float
+    silence_duration: Optional[float] = None  # populated on speech_end
+
+
 class ReplySuggestion(BaseModel):
     """Suggested replies for the user based on meeting context."""
 
@@ -121,4 +131,5 @@ RealtimeEvent = (
     | ContradictionAlert
     | ReplySuggestion
     | CustomPromptResult
+    | SpeechStateEvent
 )
