@@ -13,7 +13,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
   - Add `AggregatedTurn` to the `RealtimeEvent` union type
   - Tests: creation with valid fields, serialization round-trip, type discriminator is `"aggregated_turn"`, `segment_count` must be positive
 
-- [ ] Task 1.2 — Implement `TurnAggregator` class in `src/autonote/realtime/aggregator.py` (new file) and write unit tests in `tests/unit/test_turn_aggregator.py`. Commit: `feat(realtime): implement TurnAggregator with timestamp-based grouping`
+- [x] Task 1.2 — Implement `TurnAggregator` class in `src/autonote/realtime/aggregator.py` (new file) and write unit tests in `tests/unit/test_turn_aggregator.py`. Commit: `feat(realtime): implement TurnAggregator with timestamp-based grouping` — 22 new tests, 359 total passing.
 
   **Details:**
   - Configurable `silence_threshold` (default 2.0s) and `max_turn_duration` (default 30.0s)
