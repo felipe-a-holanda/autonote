@@ -9,9 +9,10 @@ concerns. The `type` discriminator field is kept for TUI event routing.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -27,6 +28,26 @@ class TranscriptSegment(BaseModel):
     timestamp_start: float
     timestamp_end: float
     is_partial: bool = False
+
+
+class AggregatedTurn(BaseModel):
+    """Multiple transcript segments merged into a single speaker turn."""
+
+    type: Literal["aggregated_turn"] = "aggregated_turn"
+    speaker: str
+    text: str
+    timestamp_start: float
+    timestamp_end: float
+    segment_count: int
+    wall_time_start: Optional[datetime] = None
+    wall_time_end: Optional[datetime] = None
+
+    @field_validator("segment_count")
+    @classmethod
+    def segment_count_must_be_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("segment_count must be >= 1")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +115,7 @@ class CustomPromptResult(BaseModel):
 
 RealtimeEvent = (
     TranscriptSegment
+    | AggregatedTurn
     | SummaryUpdate
     | ActionItemsUpdate
     | ContradictionAlert

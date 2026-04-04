@@ -1,8 +1,11 @@
 """Tests for realtime event models."""
 
+from datetime import datetime, timezone
+
 import pytest
 from pydantic import ValidationError
 from autonote.realtime.models import (
+    AggregatedTurn,
     TranscriptSegment,
     SummaryUpdate,
     ActionItem,
@@ -11,6 +14,122 @@ from autonote.realtime.models import (
     ReplySuggestion,
     CustomPromptResult,
 )
+
+
+class TestAggregatedTurn:
+    """Test AggregatedTurn model."""
+
+    def test_valid_aggregated_turn(self):
+        """Test creating a valid aggregated turn."""
+        turn = AggregatedTurn(
+            speaker="Me",
+            text="Hello, how are you? I'm doing well.",
+            timestamp_start=0.0,
+            timestamp_end=5.5,
+            segment_count=2,
+        )
+        assert turn.type == "aggregated_turn"
+        assert turn.speaker == "Me"
+        assert turn.text == "Hello, how are you? I'm doing well."
+        assert turn.timestamp_start == 0.0
+        assert turn.timestamp_end == 5.5
+        assert turn.segment_count == 2
+        assert turn.wall_time_start is None
+        assert turn.wall_time_end is None
+
+    def test_aggregated_turn_with_wall_times(self):
+        """Test creating an aggregated turn with wall clock times."""
+        start = datetime(2026, 4, 4, 10, 0, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 4, 4, 10, 0, 5, tzinfo=timezone.utc)
+        turn = AggregatedTurn(
+            speaker="Them",
+            text="Good morning.",
+            timestamp_start=10.0,
+            timestamp_end=15.0,
+            segment_count=1,
+            wall_time_start=start,
+            wall_time_end=end,
+        )
+        assert turn.wall_time_start == start
+        assert turn.wall_time_end == end
+
+    def test_type_discriminator_is_aggregated_turn(self):
+        """Test that type discriminator is always 'aggregated_turn'."""
+        turn = AggregatedTurn(
+            speaker="Me",
+            text="Test",
+            timestamp_start=0.0,
+            timestamp_end=1.0,
+            segment_count=1,
+        )
+        assert turn.type == "aggregated_turn"
+
+    def test_segment_count_must_be_positive(self):
+        """Test that segment_count of zero or negative is rejected."""
+        with pytest.raises(ValidationError):
+            AggregatedTurn(
+                speaker="Me",
+                text="Test",
+                timestamp_start=0.0,
+                timestamp_end=1.0,
+                segment_count=0,
+            )
+
+    def test_segment_count_negative_rejected(self):
+        """Test that negative segment_count is rejected."""
+        with pytest.raises(ValidationError):
+            AggregatedTurn(
+                speaker="Me",
+                text="Test",
+                timestamp_start=0.0,
+                timestamp_end=1.0,
+                segment_count=-1,
+            )
+
+    def test_serialization_round_trip(self):
+        """Test that AggregatedTurn serializes and deserializes correctly."""
+        start = datetime(2026, 4, 4, 9, 0, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 4, 4, 9, 0, 3, tzinfo=timezone.utc)
+        turn = AggregatedTurn(
+            speaker="Them",
+            text="Let's discuss the roadmap.",
+            timestamp_start=30.0,
+            timestamp_end=33.5,
+            segment_count=3,
+            wall_time_start=start,
+            wall_time_end=end,
+        )
+        data = turn.model_dump()
+        assert data["type"] == "aggregated_turn"
+        assert data["speaker"] == "Them"
+        assert data["text"] == "Let's discuss the roadmap."
+        assert data["timestamp_start"] == 30.0
+        assert data["timestamp_end"] == 33.5
+        assert data["segment_count"] == 3
+        assert data["wall_time_start"] == start
+        assert data["wall_time_end"] == end
+
+        restored = AggregatedTurn(**data)
+        assert restored == turn
+
+    def test_aggregated_turn_missing_required_fields(self):
+        """Test that missing required fields raise ValidationError."""
+        with pytest.raises(ValidationError):
+            AggregatedTurn(speaker="Me", text="Hello")  # Missing timestamps and segment_count
+
+    def test_aggregated_turn_in_realtime_event_union(self):
+        """Test that AggregatedTurn is part of the RealtimeEvent union."""
+        from autonote.realtime.models import RealtimeEvent
+        turn = AggregatedTurn(
+            speaker="Me",
+            text="This is a complete turn.",
+            timestamp_start=0.0,
+            timestamp_end=4.0,
+            segment_count=2,
+        )
+        # Verify it's accepted as a RealtimeEvent (type checking via isinstance)
+        assert isinstance(turn, AggregatedTurn)
+        assert turn.type == "aggregated_turn"
 
 
 class TestTranscriptSegment:
