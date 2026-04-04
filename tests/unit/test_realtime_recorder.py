@@ -18,10 +18,6 @@ from autonote.realtime.recorder import (
 )
 
 
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
-
-
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -84,31 +80,31 @@ class TestDeviceDefaults:
 # ---------------------------------------------------------------------------
 
 class TestCheckDependencies:
-    def test_both_present(self):
+    async def test_both_present(self):
         with patch("shutil.which", return_value="/usr/bin/tool"):
-            ok, errors = run(RealtimeRecorder.check_dependencies())
+            ok, errors = await RealtimeRecorder.check_dependencies()
         assert ok is True
         assert errors == []
 
-    def test_missing_pactl(self):
+    async def test_missing_pactl(self):
         def which_side(name):
             return None if name == "pactl" else "/usr/bin/ffmpeg"
         with patch("shutil.which", side_effect=which_side):
-            ok, errors = run(RealtimeRecorder.check_dependencies())
+            ok, errors = await RealtimeRecorder.check_dependencies()
         assert ok is False
         assert any("pactl" in e for e in errors)
 
-    def test_missing_ffmpeg(self):
+    async def test_missing_ffmpeg(self):
         def which_side(name):
             return None if name == "ffmpeg" else "/usr/bin/pactl"
         with patch("shutil.which", side_effect=which_side):
-            ok, errors = run(RealtimeRecorder.check_dependencies())
+            ok, errors = await RealtimeRecorder.check_dependencies()
         assert ok is False
         assert any("ffmpeg" in e for e in errors)
 
-    def test_both_missing(self):
+    async def test_both_missing(self):
         with patch("shutil.which", return_value=None):
-            ok, errors = run(RealtimeRecorder.check_dependencies())
+            ok, errors = await RealtimeRecorder.check_dependencies()
         assert ok is False
         assert len(errors) == 2
 
@@ -307,7 +303,7 @@ class TestProperties:
 # ---------------------------------------------------------------------------
 
 class TestGetDefaults:
-    def test_uses_config_mic_override(self):
+    async def test_uses_config_mic_override(self):
         r = RealtimeRecorder()
         with patch("autonote.realtime.recorder.config") as mock_config:
             mock_config.get.side_effect = lambda k, d="": {
@@ -315,10 +311,10 @@ class TestGetDefaults:
                 "SYSTEM_SOURCE": "",
             }.get(k, d)
             with patch.object(RealtimeRecorder, "_run_pactl", new_callable=AsyncMock, return_value="default_sink\n"):
-                defaults = run(r.get_defaults())
+                defaults = await r.get_defaults()
         assert defaults.source == "custom_mic"
 
-    def test_uses_config_system_override(self):
+    async def test_uses_config_system_override(self):
         r = RealtimeRecorder()
         with patch("autonote.realtime.recorder.config") as mock_config:
             mock_config.get.side_effect = lambda k, d="": {
@@ -326,10 +322,10 @@ class TestGetDefaults:
                 "SYSTEM_SOURCE": "custom_monitor",
             }.get(k, d)
             with patch.object(RealtimeRecorder, "_run_pactl", new_callable=AsyncMock, return_value="default_source\n"):
-                defaults = run(r.get_defaults())
+                defaults = await r.get_defaults()
         assert defaults.monitor == "custom_monitor"
 
-    def test_auto_detect_from_pactl(self):
+    async def test_auto_detect_from_pactl(self):
         r = RealtimeRecorder()
 
         async def mock_pactl(*args):
@@ -338,13 +334,13 @@ class TestGetDefaults:
         with patch("autonote.realtime.recorder.config") as mock_config:
             mock_config.get.return_value = ""
             with patch.object(RealtimeRecorder, "_run_pactl", side_effect=mock_pactl):
-                defaults = run(r.get_defaults())
+                defaults = await r.get_defaults()
 
         assert defaults.source == "mic_source"
         assert defaults.sink == "out_sink"
         assert defaults.monitor == "out_sink.monitor"
 
-    def test_pactl_failure_graceful(self):
+    async def test_pactl_failure_graceful(self):
         r = RealtimeRecorder()
 
         async def failing_pactl(*args):
@@ -353,7 +349,7 @@ class TestGetDefaults:
         with patch("autonote.realtime.recorder.config") as mock_config:
             mock_config.get.return_value = ""
             with patch.object(RealtimeRecorder, "_run_pactl", side_effect=failing_pactl):
-                defaults = run(r.get_defaults())
+                defaults = await r.get_defaults()
 
         assert defaults.source == ""
         assert defaults.monitor == ""
@@ -364,7 +360,7 @@ class TestGetDefaults:
 # ---------------------------------------------------------------------------
 
 class TestHandleCrash:
-    def test_resets_recording_state(self):
+    async def test_resets_recording_state(self):
         r = RealtimeRecorder()
         r._is_recording = True
         r._mic_process = MagicMock()
@@ -375,7 +371,7 @@ class TestHandleCrash:
         r._audio_files = ["mic.wav"]
         r._title = "Test"
 
-        run(r._handle_crash())
+        await r._handle_crash()
 
         assert r._is_recording is False
         assert r._mic_process is None
@@ -386,25 +382,25 @@ class TestHandleCrash:
         assert r._audio_files == []
         assert r._title == ""
 
-    def test_invokes_crash_callback(self):
+    async def test_invokes_crash_callback(self):
         r = RealtimeRecorder()
         cb = AsyncMock()
         r._crash_callback = cb
 
-        run(r._handle_crash())
+        await r._handle_crash()
 
         cb.assert_awaited_once()
 
-    def test_no_callback_no_error(self):
+    async def test_no_callback_no_error(self):
         r = RealtimeRecorder()
-        run(r._handle_crash())  # Should not raise
+        await r._handle_crash()  # Should not raise
 
-    def test_callback_exception_swallowed(self):
+    async def test_callback_exception_swallowed(self):
         r = RealtimeRecorder()
         cb = AsyncMock(side_effect=Exception("boom"))
         r._crash_callback = cb
 
-        run(r._handle_crash())  # Should not propagate exception
+        await r._handle_crash()  # Should not propagate exception
         cb.assert_awaited_once()
 
 
@@ -413,18 +409,18 @@ class TestHandleCrash:
 # ---------------------------------------------------------------------------
 
 class TestStartStopGuards:
-    def test_stop_when_not_recording_raises(self):
+    async def test_stop_when_not_recording_raises(self):
         r = RealtimeRecorder()
         with pytest.raises(RuntimeError, match="Not currently recording"):
-            run(r.stop())
+            await r.stop()
 
-    def test_start_when_already_recording_raises(self):
+    async def test_start_when_already_recording_raises(self):
         r = RealtimeRecorder()
         r._is_recording = True
         with pytest.raises(RuntimeError, match="already in progress"):
-            run(r.start(mic_source="test", monitor_source=""))
+            await r.start(mic_source="test", monitor_source="")
 
-    def test_start_with_no_mic_source_raises(self):
+    async def test_start_with_no_mic_source_raises(self):
         r = RealtimeRecorder()
 
         async def mock_get_defaults():
@@ -432,7 +428,7 @@ class TestStartStopGuards:
 
         with patch.object(r, "get_defaults", side_effect=mock_get_defaults):
             with pytest.raises(RuntimeError, match="No microphone source"):
-                run(r.start())
+                await r.start()
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +436,7 @@ class TestStartStopGuards:
 # ---------------------------------------------------------------------------
 
 class TestReaderLoop:
-    def test_reads_chunks_to_queue(self):
+    async def test_reads_chunks_to_queue(self):
         r = RealtimeRecorder()
         r._is_recording = True
         r._stopping = False
@@ -457,7 +453,7 @@ class TestReaderLoop:
         mock_process.stdout = mock_stdout
 
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        run(r._reader_loop(mock_process, "Me", queue))
+        await r._reader_loop(mock_process, "Me", queue)
 
         items = []
         while not queue.empty():
@@ -469,7 +465,7 @@ class TestReaderLoop:
         assert r._chunks_processed == 2
         assert r._bytes_read == CHUNK_SIZE * 2
 
-    def test_eof_puts_none_sentinel(self):
+    async def test_eof_puts_none_sentinel(self):
         r = RealtimeRecorder()
         r._is_recording = False
         r._stopping = True
@@ -484,11 +480,11 @@ class TestReaderLoop:
         mock_process.stdout = mock_stdout
 
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        run(r._reader_loop(mock_process, "Me", queue))
+        await r._reader_loop(mock_process, "Me", queue)
 
         assert queue.get_nowait() is None
 
-    def test_crash_detection_when_all_streams_exit(self):
+    async def test_crash_detection_when_all_streams_exit(self):
         r = RealtimeRecorder()
         r._is_recording = True
         r._stopping = False
@@ -505,11 +501,11 @@ class TestReaderLoop:
         mock_process.stdout = mock_stdout
 
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        run(r._reader_loop(mock_process, "Me", queue))
+        await r._reader_loop(mock_process, "Me", queue)
 
         cb.assert_awaited_once()
 
-    def test_no_crash_when_stopping(self):
+    async def test_no_crash_when_stopping(self):
         r = RealtimeRecorder()
         r._is_recording = True
         r._stopping = True  # Graceful stop
@@ -526,11 +522,11 @@ class TestReaderLoop:
         mock_process.stdout = mock_stdout
 
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        run(r._reader_loop(mock_process, "Me", queue))
+        await r._reader_loop(mock_process, "Me", queue)
 
         cb.assert_not_awaited()
 
-    def test_partial_stream_exit_no_crash(self):
+    async def test_partial_stream_exit_no_crash(self):
         """When one of two streams exits, crash handler not triggered yet."""
         r = RealtimeRecorder()
         r._is_recording = True
@@ -546,7 +542,7 @@ class TestReaderLoop:
         mock_process.stdout = mock_stdout
 
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        run(r._reader_loop(mock_process, "Me", queue))
+        await r._reader_loop(mock_process, "Me", queue)
 
         assert r._active_stream_count == 1
 
@@ -571,12 +567,12 @@ def _make_blocking_proc():
 
 
 class TestStartStopIntegration:
-    def test_start_sets_recording_state(self, tmp_path):
+    async def test_start_sets_recording_state(self, tmp_path):
         r = RealtimeRecorder(recordings_dir=str(tmp_path), save_to_file=False)
         mock_proc = _make_blocking_proc()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            run(r.start(mic_source="test_mic", monitor_source=""))
+            await r.start(mic_source="test_mic", monitor_source="")
 
         assert r.is_recording is True
         assert r._mic_source == "test_mic"
@@ -586,63 +582,63 @@ class TestStartStopIntegration:
         if r._mic_reader_task:
             r._mic_reader_task.cancel()
 
-    def test_start_mic_only_no_monitor_process(self, tmp_path):
+    async def test_start_mic_only_no_monitor_process(self, tmp_path):
         r = RealtimeRecorder(recordings_dir=str(tmp_path), save_to_file=False)
         mock_proc = _make_blocking_proc()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            run(r.start(mic_source="test_mic", monitor_source=""))
+            await r.start(mic_source="test_mic", monitor_source="")
 
         assert r.has_monitor is False
         if r._mic_reader_task:
             r._mic_reader_task.cancel()
 
-    def test_start_with_monitor_source(self, tmp_path):
+    async def test_start_with_monitor_source(self, tmp_path):
         r = RealtimeRecorder(recordings_dir=str(tmp_path), save_to_file=False)
         mock_proc = _make_blocking_proc()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            run(r.start(mic_source="test_mic", monitor_source="test_monitor"))
+            await r.start(mic_source="test_mic", monitor_source="test_monitor")
 
         assert r._monitor_process is not None
         for task in (r._mic_reader_task, r._monitor_reader_task):
             if task:
                 task.cancel()
 
-    def test_start_creates_meeting_dir_when_save_to_file(self, tmp_path):
+    async def test_start_creates_meeting_dir_when_save_to_file(self, tmp_path):
         r = RealtimeRecorder(recordings_dir=str(tmp_path), save_to_file=True)
         mock_proc = _make_blocking_proc()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            run(r.start(mic_source="test_mic", monitor_source=""))
+            await r.start(mic_source="test_mic", monitor_source="")
 
         assert r.meeting_dir is not None
         assert Path(r.meeting_dir).exists()
         if r._mic_reader_task:
             r._mic_reader_task.cancel()
 
-    def test_stop_returns_stats(self, tmp_path):
+    async def test_stop_returns_stats(self, tmp_path):
         r = RealtimeRecorder(recordings_dir=str(tmp_path), save_to_file=False)
         mock_proc = _make_blocking_proc()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            run(r.start(mic_source="test_mic", monitor_source=""))
+            await r.start(mic_source="test_mic", monitor_source="")
 
         assert r.is_recording is True
-        stats = run(r.stop())
+        stats = await r.stop()
 
         assert stats.is_recording is False
         assert isinstance(stats.duration_seconds, float)
         assert r.is_recording is False
 
-    def test_stop_resets_process_refs(self, tmp_path):
+    async def test_stop_resets_process_refs(self, tmp_path):
         r = RealtimeRecorder(recordings_dir=str(tmp_path), save_to_file=False)
         mock_proc = _make_blocking_proc()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            run(r.start(mic_source="test_mic", monitor_source=""))
+            await r.start(mic_source="test_mic", monitor_source="")
 
-        run(r.stop())
+        await r.stop()
 
         assert r._mic_process is None
         assert r._monitor_process is None

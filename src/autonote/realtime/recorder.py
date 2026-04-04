@@ -89,6 +89,10 @@ class RealtimeRecorder:
         self.mic_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self.monitor_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
+        # VAD queues — tee of mic/monitor for VADMonitor workers
+        self.mic_vad_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self.monitor_vad_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
         # Internal state
         self._mic_process: Optional[asyncio.subprocess.Process] = None
         self._monitor_process: Optional[asyncio.subprocess.Process] = None
@@ -329,13 +333,15 @@ class RealtimeRecorder:
         # Drain old queues
         self._drain_queue(self.mic_queue)
         self._drain_queue(self.monitor_queue)
+        self._drain_queue(self.mic_vad_queue)
+        self._drain_queue(self.monitor_vad_queue)
 
         self._mic_reader_task = asyncio.create_task(
-            self._reader_loop(self._mic_process, "Me", self.mic_queue)
+            self._reader_loop(self._mic_process, "Me", self.mic_queue, self.mic_vad_queue)
         )
         if self._monitor_process is not None:
             self._monitor_reader_task = asyncio.create_task(
-                self._reader_loop(self._monitor_process, "Them", self.monitor_queue)
+                self._reader_loop(self._monitor_process, "Them", self.monitor_queue, self.monitor_vad_queue)
             )
 
     async def stop(self) -> RecordingStats:
@@ -366,6 +372,8 @@ class RealtimeRecorder:
         # Signal consumers that streams are done
         await self.mic_queue.put(None)
         await self.monitor_queue.put(None)
+        await self.mic_vad_queue.put(None)
+        await self.monitor_vad_queue.put(None)
 
         duration = time.monotonic() - self._start_time if self._start_time is not None else 0.0
 
@@ -431,12 +439,16 @@ class RealtimeRecorder:
         process: asyncio.subprocess.Process,
         speaker_label: str,
         queue: asyncio.Queue[bytes | None],
+        vad_queue: asyncio.Queue[bytes | None] | None = None,
     ) -> None:
         """Read PCM chunks from ffmpeg stdout and push them to the consumer queue.
 
         Pushes ``None`` on EOF to signal stream end.  Implements crash
         detection: if all streams exit while recording is active and we're
         not in a graceful stop, the crash callback is invoked.
+
+        When *vad_queue* is provided, each chunk is also tee'd into it so a
+        downstream :class:`VADMonitor` can process the same audio in parallel.
         """
         assert process.stdout is not None
 
@@ -449,14 +461,18 @@ class RealtimeRecorder:
                 self._chunks_processed += 1
                 self._bytes_read += len(chunk)
                 await queue.put(chunk)
+                if vad_queue is not None:
+                    await vad_queue.put(chunk)
         except asyncio.CancelledError:
             logger.debug("Reader loop (%s) cancelled", speaker_label)
             raise
         except Exception as exc:
             logger.error("Reader loop (%s) unexpected error: %s", speaker_label, exc)
         finally:
-            # Signal consumer that this stream is done
+            # Signal consumers that this stream is done
             await queue.put(None)
+            if vad_queue is not None:
+                await vad_queue.put(None)
 
             # Crash detection
             if self._is_recording and not self._stopping:

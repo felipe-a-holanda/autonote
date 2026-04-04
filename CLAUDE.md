@@ -15,4 +15,12 @@ Here are some instructions and system guidelines to consider while working insid
 - Use Python 3.10+ type hints.
 - Parse `autonote.config` values to set module defaults.
 
+## Testing
+- **Async tests**: `pytest-asyncio` is installed with `asyncio_mode = "auto"`. Write async tests as plain `async def test_*` functions — no decorator needed:
+  ```python
+  async def test_something():
+      result = await my_async_func()
+      assert result == expected
+  ```
+
 Always strive to keep `autonote` minimal, importable, extensible, and free of system-level glue logic!

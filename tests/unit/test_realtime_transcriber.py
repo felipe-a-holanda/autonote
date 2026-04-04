@@ -12,10 +12,6 @@ from autonote.realtime.transcriber import RealtimeTranscriber, SAMPLE_RATE
 from autonote.realtime.models import TranscriptSegment
 
 
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -124,24 +120,24 @@ class TestDebugCallback:
 # ---------------------------------------------------------------------------
 
 class TestStopWithoutStart:
-    def test_stop_puts_none_sentinel(self):
+    async def test_stop_puts_none_sentinel(self):
         t = make_transcriber()
-        run(t.stop())
+        await t.stop()
         assert t.segment_queue.get_nowait() is None
 
-    def test_stop_resets_clients(self):
+    async def test_stop_resets_clients(self):
         t = make_transcriber()
-        run(t.stop())
+        await t.stop()
         assert t._mic_client is None
         assert t._monitor_client is None
 
-    def test_stop_sets_running_false(self):
+    async def test_stop_sets_running_false(self):
         t = make_transcriber()
         t._running = True
-        run(t.stop())
+        await t.stop()
         assert t._running is False
 
-    def test_stop_client_disconnect_error_handled(self):
+    async def test_stop_client_disconnect_error_handled(self):
         t = make_transcriber()
         mock_client = MagicMock()
 
@@ -152,11 +148,11 @@ class TestStopWithoutStart:
         t._mic_client = mock_client
 
         # Should not raise even if disconnect fails
-        run(t.stop())
+        await t.stop()
 
-    def test_stop_resets_feeder_tasks_to_none(self):
+    async def test_stop_resets_feeder_tasks_to_none(self):
         t = make_transcriber()
-        run(t.stop())
+        await t.stop()
         assert t._mic_feeder_task is None
         assert t._monitor_feeder_task is None
 
@@ -166,7 +162,7 @@ class TestStopWithoutStart:
 # ---------------------------------------------------------------------------
 
 class TestStartErrors:
-    def test_raises_without_api_key(self):
+    async def test_raises_without_api_key(self):
         mic_q: asyncio.Queue = asyncio.Queue()
         with patch("autonote.realtime.transcriber.config") as mock_config:
             mock_config.get.return_value = ""
@@ -199,7 +195,7 @@ class TestStartErrors:
             "assemblyai.streaming.v3.models": fake_models_mod,
         }):
             with pytest.raises(RuntimeError, match="ASSEMBLYAI_API_KEY"):
-                run(t.start())
+                await t.start()
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +203,7 @@ class TestStartErrors:
 # ---------------------------------------------------------------------------
 
 class TestFeedLoop:
-    def test_sends_chunk_at_threshold(self):
+    async def test_sends_chunk_at_threshold(self):
         t = make_transcriber()
         t._running = True
 
@@ -219,12 +215,12 @@ class TestFeedLoop:
         mic_q.put_nowait(b"x" * 3200)
         mic_q.put_nowait(None)
 
-        run(t._feed_loop(mic_q, mock_client, "Me"))
+        await t._feed_loop(mic_q, mock_client, "Me")
 
         assert len(streamed) == 1
         assert streamed[0] == b"x" * 3200
 
-    def test_buffers_small_chunks(self):
+    async def test_buffers_small_chunks(self):
         t = make_transcriber()
         t._running = True
 
@@ -238,12 +234,12 @@ class TestFeedLoop:
         mic_q.put_nowait(b"c" * 1200)
         mic_q.put_nowait(None)
 
-        run(t._feed_loop(mic_q, mock_client, "Me"))
+        await t._feed_loop(mic_q, mock_client, "Me")
 
         assert len(streamed) == 1
         assert len(streamed[0]) == 3200
 
-    def test_flushes_remainder_on_eof(self):
+    async def test_flushes_remainder_on_eof(self):
         t = make_transcriber()
         t._running = True
 
@@ -255,12 +251,12 @@ class TestFeedLoop:
         mic_q.put_nowait(b"z" * 500)
         mic_q.put_nowait(None)
 
-        run(t._feed_loop(mic_q, mock_client, "Me"))
+        await t._feed_loop(mic_q, mock_client, "Me")
 
         assert len(streamed) == 1
         assert len(streamed[0]) == 500
 
-    def test_no_flush_when_buffer_empty_at_eof(self):
+    async def test_no_flush_when_buffer_empty_at_eof(self):
         t = make_transcriber()
         t._running = True
 
@@ -273,11 +269,11 @@ class TestFeedLoop:
         mic_q.put_nowait(b"x" * 3200)
         mic_q.put_nowait(None)
 
-        run(t._feed_loop(mic_q, mock_client, "Me"))
+        await t._feed_loop(mic_q, mock_client, "Me")
 
         assert len(streamed) == 1
 
-    def test_stops_immediately_when_not_running(self):
+    async def test_stops_immediately_when_not_running(self):
         t = make_transcriber()
         t._running = False
 
@@ -289,11 +285,11 @@ class TestFeedLoop:
         mic_q.put_nowait(b"x" * 3200)
         mic_q.put_nowait(None)
 
-        run(t._feed_loop(mic_q, mock_client, "Me"))
+        await t._feed_loop(mic_q, mock_client, "Me")
 
         assert streamed == []
 
-    def test_increments_chunks_fed_counter(self):
+    async def test_increments_chunks_fed_counter(self):
         t = make_transcriber()
         t._running = True
 
@@ -305,11 +301,11 @@ class TestFeedLoop:
         mic_q.put_nowait(b"y" * 3200)
         mic_q.put_nowait(None)
 
-        run(t._feed_loop(mic_q, mock_client, "Me"))
+        await t._feed_loop(mic_q, mock_client, "Me")
 
         assert t._chunks_fed["Me"] == 2
 
-    def test_exception_does_not_propagate(self):
+    async def test_exception_does_not_propagate(self):
         t = make_transcriber()
         t._running = True
 
@@ -321,9 +317,9 @@ class TestFeedLoop:
 
         mic_q.get = raising_get  # type: ignore[method-assign]
 
-        run(t._feed_loop(mic_q, mock_client, "Me"))  # Should not raise
+        await t._feed_loop(mic_q, mock_client, "Me")  # Should not raise
 
-    def test_multiple_threshold_flushes(self):
+    async def test_multiple_threshold_flushes(self):
         t = make_transcriber()
         t._running = True
 
@@ -337,7 +333,7 @@ class TestFeedLoop:
         mic_q.put_nowait(b"b" * 3200)
         mic_q.put_nowait(None)
 
-        run(t._feed_loop(mic_q, mock_client, "Me"))
+        await t._feed_loop(mic_q, mock_client, "Me")
 
         assert len(streamed) == 2
 
@@ -368,6 +364,10 @@ class TestCreateClient:
 
         t._create_client(speaker, MockStreamingClient, FakeEvents, MagicMock())
         return captured, mock_instance
+
+    async def _drain_callbacks(self):
+        """Run the event loop briefly to process any call_soon_threadsafe callbacks."""
+        await asyncio.sleep(0)
 
     def test_registers_four_event_handlers(self):
         t = make_transcriber()
@@ -415,11 +415,7 @@ class TestCreateClient:
 
         assert t._on_data_calls.get("Me", 0) == 1
 
-    def _drain_callbacks(self):
-        """Run the event loop briefly to process any call_soon_threadsafe callbacks."""
-        run(asyncio.sleep(0))
-
-    def test_on_turn_final_puts_segment(self):
+    async def test_on_turn_final_puts_segment(self):
         t = make_transcriber()
         t._loop = asyncio.get_event_loop()
         t._running = True
@@ -436,7 +432,7 @@ class TestCreateClient:
         mock_event.words = [mock_word]
 
         captured["Turn"](None, mock_event)
-        self._drain_callbacks()
+        await self._drain_callbacks()
 
         segment = t.segment_queue.get_nowait()
         assert isinstance(segment, TranscriptSegment)
@@ -445,7 +441,7 @@ class TestCreateClient:
         assert segment.is_partial is False
         assert segment.timestamp_end == 1.5
 
-    def test_on_turn_partial_segment(self):
+    async def test_on_turn_partial_segment(self):
         t = make_transcriber()
         t._loop = asyncio.get_event_loop()
         t._running = True
@@ -462,13 +458,13 @@ class TestCreateClient:
         mock_event.words = [mock_word]
 
         captured["Turn"](None, mock_event)
-        self._drain_callbacks()
+        await self._drain_callbacks()
 
         segment = t.segment_queue.get_nowait()
         assert segment.is_partial is True
         assert segment.speaker == "Them"
 
-    def test_on_turn_no_words_timestamps_zero(self):
+    async def test_on_turn_no_words_timestamps_zero(self):
         t = make_transcriber()
         t._loop = asyncio.get_event_loop()
         t._running = True
@@ -481,13 +477,13 @@ class TestCreateClient:
         mock_event.words = []
 
         captured["Turn"](None, mock_event)
-        self._drain_callbacks()
+        await self._drain_callbacks()
 
         segment = t.segment_queue.get_nowait()
         assert segment.timestamp_start == 0.0
         assert segment.timestamp_end == 0.0
 
-    def test_on_turn_not_queued_when_not_running(self):
+    async def test_on_turn_not_queued_when_not_running(self):
         t = make_transcriber()
         t._loop = asyncio.get_event_loop()
         t._running = False  # Not running
@@ -500,7 +496,7 @@ class TestCreateClient:
         mock_event.words = []
 
         captured["Turn"](None, mock_event)
-        self._drain_callbacks()
+        await self._drain_callbacks()
 
         assert t.segment_queue.empty()
 

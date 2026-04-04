@@ -2,7 +2,6 @@
 
 import json
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from autonote.reasoning.workers.action_items import ActionItemWorker
@@ -102,14 +101,12 @@ class TestActionItemWorkerParseResponse:
 
 class TestActionItemWorkerExecute:
 
-    def test_execute_calls_dispatcher(self):
+    async def test_execute_calls_dispatcher(self):
         response = json.dumps({"new_items": [{"description": "Deploy app"}], "updated_items": []})
         dispatcher = make_dispatcher(response)
         worker = ActionItemWorker(dispatcher)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute(full_context="ctx", recent_transcript="transcript", existing_items=[])
-        )
+        result = await worker.execute(full_context="ctx", recent_transcript="transcript", existing_items=[])
 
         dispatcher.run.assert_called_once_with(
             "action_items",
@@ -182,23 +179,19 @@ class TestContradictionWorkerParseResponse:
 
 class TestContradictionWorkerExecute:
 
-    def test_skips_empty_transcript(self):
+    async def test_skips_empty_transcript(self):
         dispatcher = make_dispatcher()
         worker = ContradictionWorker(dispatcher)
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute(current_summary="summary", recent_transcript="   ")
-        )
+        result = await worker.execute(current_summary="summary", recent_transcript="   ")
         dispatcher.run.assert_not_called()
         assert result == []
 
-    def test_execute_calls_dispatcher_when_transcript_present(self):
+    async def test_execute_calls_dispatcher_when_transcript_present(self):
         response = json.dumps({"contradictions": []})
         dispatcher = make_dispatcher(response)
         worker = ContradictionWorker(dispatcher)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute(current_summary="sum", recent_transcript="Alice said X.")
-        )
+        result = await worker.execute(current_summary="sum", recent_transcript="Alice said X.")
 
         dispatcher.run.assert_called_once()
         assert result == []
@@ -242,14 +235,12 @@ class TestReplyWorkerParseResponse:
 
 class TestReplyWorkerExecute:
 
-    def test_execute_returns_reply_suggestion(self):
+    async def test_execute_returns_reply_suggestion(self):
         response = json.dumps({"suggestions": ["Sounds good"], "context": "ctx"})
         dispatcher = make_dispatcher(response)
         worker = ReplyWorker(dispatcher)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute(full_context="meeting ctx", context_hint="deployment question")
-        )
+        result = await worker.execute(full_context="meeting ctx", context_hint="deployment question")
 
         assert isinstance(result, ReplySuggestion)
         assert result.suggestions == ["Sounds good"]
@@ -262,35 +253,29 @@ class TestReplyWorkerExecute:
 
 class TestSummaryWorkerExecute:
 
-    def test_returns_current_summary_when_no_new_segments(self):
+    async def test_returns_current_summary_when_no_new_segments(self):
         dispatcher = make_dispatcher("ignored")
         worker = SummaryWorker(dispatcher)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute(current_summary="existing summary", new_segments="   ")
-        )
+        result = await worker.execute(current_summary="existing summary", new_segments="   ")
 
         dispatcher.run.assert_not_called()
         assert result == "existing summary"
 
-    def test_calls_dispatcher_and_returns_stripped_result(self):
+    async def test_calls_dispatcher_and_returns_stripped_result(self):
         dispatcher = make_dispatcher("  Updated summary.  ")
         worker = SummaryWorker(dispatcher)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute(current_summary="old", new_segments="Alice: new stuff.")
-        )
+        result = await worker.execute(current_summary="old", new_segments="Alice: new stuff.")
 
         dispatcher.run.assert_called_once()
         assert result == "Updated summary."
 
-    def test_uses_default_placeholder_when_no_summary(self):
+    async def test_uses_default_placeholder_when_no_summary(self):
         dispatcher = make_dispatcher("First summary.")
         worker = SummaryWorker(dispatcher)
 
-        asyncio.get_event_loop().run_until_complete(
-            worker.execute(current_summary="", new_segments="Alice: Hello.")
-        )
+        await worker.execute(current_summary="", new_segments="Alice: Hello.")
 
         call_kwargs = dispatcher.run.call_args[1]
         assert "first update" in call_kwargs["current_summary"].lower()
@@ -302,16 +287,14 @@ class TestSummaryWorkerExecute:
 
 class TestCustomPromptWorkerExecute:
 
-    def test_returns_custom_prompt_result(self):
+    async def test_returns_custom_prompt_result(self):
         dispatcher = make_dispatcher("  The answer.  ")
         worker = CustomPromptWorker(dispatcher)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute(
-                full_context="meeting ctx",
-                user_prompt="What was decided?",
-                timestamp=42.0,
-            )
+        result = await worker.execute(
+            full_context="meeting ctx",
+            user_prompt="What was decided?",
+            timestamp=42.0,
         )
 
         assert isinstance(result, CustomPromptResult)
@@ -319,23 +302,19 @@ class TestCustomPromptWorkerExecute:
         assert result.prompt == "What was decided?"
         assert result.timestamp == 42.0
 
-    def test_uses_placeholder_when_no_context(self):
+    async def test_uses_placeholder_when_no_context(self):
         dispatcher = make_dispatcher("answer")
         worker = CustomPromptWorker(dispatcher)
 
-        asyncio.get_event_loop().run_until_complete(
-            worker.execute(full_context="", user_prompt="Q?")
-        )
+        await worker.execute(full_context="", user_prompt="Q?")
 
         call_kwargs = dispatcher.run.call_args[1]
         assert "No meeting context" in call_kwargs["full_context"]
 
-    def test_default_timestamp_is_zero(self):
+    async def test_default_timestamp_is_zero(self):
         dispatcher = make_dispatcher("answer")
         worker = CustomPromptWorker(dispatcher)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute(full_context="ctx", user_prompt="Q?")
-        )
+        result = await worker.execute(full_context="ctx", user_prompt="Q?")
 
         assert result.timestamp == 0.0

@@ -1,7 +1,6 @@
 """Tests for LLMDispatcher."""
 
 import pytest
-import asyncio
 from unittest.mock import patch, MagicMock
 
 from autonote.reasoning.dispatcher import LLMDispatcher
@@ -9,15 +8,13 @@ from autonote.reasoning.dispatcher import LLMDispatcher
 
 class TestLLMDispatcher:
 
-    def test_raises_on_unknown_task(self):
+    async def test_raises_on_unknown_task(self):
         dispatcher = LLMDispatcher(model="ollama/llama3")
         with pytest.raises(KeyError):
-            asyncio.get_event_loop().run_until_complete(
-                dispatcher.run("nonexistent_task")
-            )
+            await dispatcher.run("nonexistent_task")
 
     @patch("autonote.reasoning.dispatcher.asyncio.to_thread")
-    def test_run_calls_query_llm_with_formatted_prompt(self, mock_to_thread):
+    async def test_run_calls_query_llm_with_formatted_prompt(self, mock_to_thread):
         async def fake_to_thread(fn, **kwargs):
             return fn(**kwargs)
 
@@ -35,16 +32,14 @@ class TestLLMDispatcher:
 
         with patch("autonote.reasoning.dispatcher.query_llm", return_value="result") as mock_llm:
             dispatcher = LLMDispatcher(model="ollama/test")
-            result = asyncio.get_event_loop().run_until_complete(
-                dispatcher.run(task_name, **kwargs)
-            )
+            result = await dispatcher.run(task_name, **kwargs)
             assert mock_llm.called
             call_kwargs = mock_llm.call_args[1]
             assert call_kwargs["model"] == "ollama/test"
             assert f"realtime_{task_name}" == call_kwargs["stage"]
 
     @patch("autonote.reasoning.dispatcher.asyncio.to_thread")
-    def test_run_uses_none_model_by_default(self, mock_to_thread):
+    async def test_run_uses_none_model_by_default(self, mock_to_thread):
         async def fake_to_thread(fn, **kwargs):
             return fn(**kwargs)
         mock_to_thread.side_effect = fake_to_thread
@@ -58,5 +53,5 @@ class TestLLMDispatcher:
 
         with patch("autonote.reasoning.dispatcher.query_llm", return_value="ok") as mock_llm:
             dispatcher = LLMDispatcher()  # no model
-            asyncio.get_event_loop().run_until_complete(dispatcher.run(task_name, **kwargs))
+            await dispatcher.run(task_name, **kwargs)
             assert mock_llm.call_args[1]["model"] is None
