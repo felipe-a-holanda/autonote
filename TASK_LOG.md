@@ -24,7 +24,7 @@ Reference: [REALTIME_TURN_GROUPING_PLAN.md](./REALTIME_TURN_GROUPING_PLAN.md)
   - Output queue emits `AggregatedTurn | TranscriptSegment (partials) | None (sentinel)`
   - Tests: single segment → one turn, same-speaker merge, speaker change flush, silence gap threshold, max duration flush, partials forwarded immediately, flush_remaining, empty buffer no-op, text join, timestamp_start/end, segment_count
 
-- [ ] Task 1.3 — Wire `TurnAggregator` into `src/autonote/realtime/app.py` pipeline. Commit: `feat(realtime): wire TurnAggregator into realtime pipeline`
+- [x] Task 1.3 — Wire `TurnAggregator` into `src/autonote/realtime/app.py` pipeline. Commit: `feat(realtime): wire TurnAggregator into realtime pipeline` — 11 new tests, 370 total passing. Added `_bridge_segments()` task, updated `_consume_segments()` to read from `aggregator.output_queue`, added `_update_transcript_turn()` for `AggregatedTurn` TUI display, `flush_remaining()` called on quit.
 
   **Details:**
   - Instantiate `TurnAggregator` in `_start_pipeline()`

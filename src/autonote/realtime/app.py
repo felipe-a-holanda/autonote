@@ -26,6 +26,7 @@ from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from autonote.realtime.models import (
     ActionItemsUpdate,
+    AggregatedTurn,
     ContradictionAlert,
     CustomPromptResult,
     RealtimeEvent,
@@ -229,8 +230,10 @@ class RealtimeApp(App):
         # Pipeline objects — created in on_mount
         self._recorder = None
         self._transcriber = None
+        self._aggregator = None
         self._context_manager = None
         self._pipeline_task: Optional[asyncio.Task] = None
+        self._bridge_task: Optional[asyncio.Task] = None
         self._consumer_task: Optional[asyncio.Task] = None
         self._status_task: Optional[asyncio.Task] = None
         self._transcript_path: Optional[Path] = None
@@ -261,7 +264,8 @@ class RealtimeApp(App):
 
     @work(exclusive=True, thread=False)
     async def _start_pipeline(self) -> None:
-        """Initialize and start the full pipeline: recorder → transcriber → context_manager."""
+        """Initialize and start the full pipeline: recorder → transcriber → aggregator → context_manager."""
+        from autonote.realtime.aggregator import TurnAggregator
         from autonote.realtime.recorder import RealtimeRecorder
         from autonote.realtime.transcriber import RealtimeTranscriber as AAITranscriber
         from autonote.reasoning.context_manager import ContextManager
@@ -325,7 +329,9 @@ class RealtimeApp(App):
             )
             status.update("Recording...")
 
-            # 5. Start consumer loop and status updater
+            # 5. Instantiate aggregator and start bridge + consumer tasks
+            self._aggregator = TurnAggregator()
+            self._bridge_task = asyncio.create_task(self._bridge_segments())
             self._consumer_task = asyncio.create_task(self._consume_segments())
             self._status_task = asyncio.create_task(self._update_status_loop())
             self._debug("Pipeline running — waiting for speech", "ok")
@@ -335,28 +341,51 @@ class RealtimeApp(App):
             status.update(f"[red]Pipeline error: {exc}[/red]")
             logger.error("Pipeline startup failed: %s", exc, exc_info=True)
 
-    async def _consume_segments(self) -> None:
-        """Read TranscriptSegments from the transcriber and feed them to the ContextManager."""
+    async def _bridge_segments(self) -> None:
+        """Read TranscriptSegments from the transcriber and feed them into the aggregator."""
         assert self._transcriber is not None
-        assert self._context_manager is not None
+        assert self._aggregator is not None
 
-        segment_count = 0
         while True:
             segment = await self._transcriber.segment_queue.get()
             if segment is None:
                 self._debug("Transcriber segment queue closed", "warn")
+                self._aggregator.flush_remaining()
+                self._aggregator.output_queue.put_nowait(None)
                 break
-            # Skip partials for context manager, but still display them
-            if segment.is_partial:
-                await self._handle_event(segment)
-            else:
-                segment_count += 1
-                self._debug(f"Segment #{segment_count} [{segment.speaker}]: {segment.text[:60]}")
-                self._append_transcript(segment)
-                await self._context_manager.on_new_segment(segment)
+            self._aggregator.feed(segment)
 
-    def _append_transcript(self, segment: TranscriptSegment) -> None:
-        """Append a final TranscriptSegment as a JSON line to the transcript file."""
+    async def _consume_segments(self) -> None:
+        """Read from aggregator output queue and feed events to the ContextManager."""
+        assert self._aggregator is not None
+        assert self._context_manager is not None
+
+        turn_count = 0
+        while True:
+            item = await self._aggregator.output_queue.get()
+            if item is None:
+                self._debug("Aggregator output queue closed", "warn")
+                break
+            if isinstance(item, TranscriptSegment):
+                # Partial — display only, skip context manager
+                await self._handle_event(item)
+            elif isinstance(item, AggregatedTurn):
+                turn_count += 1
+                self._debug(f"Turn #{turn_count} [{item.speaker}]: {item.text[:60]}")
+                await self._handle_event(item)
+                self._append_transcript(item)
+                await self._context_manager.on_new_segment(
+                    TranscriptSegment(
+                        speaker=item.speaker,
+                        text=item.text,
+                        timestamp_start=item.timestamp_start,
+                        timestamp_end=item.timestamp_end,
+                        is_partial=False,
+                    )
+                )
+
+    def _append_transcript(self, segment: TranscriptSegment | AggregatedTurn) -> None:
+        """Append a transcript entry as a JSON line to the transcript file."""
         if self._transcript_path is None:
             return
         try:
@@ -375,7 +404,9 @@ class RealtimeApp(App):
     async def _handle_event(self, event: RealtimeEvent) -> None:
         """Route a realtime event to the appropriate TUI widget."""
         try:
-            if isinstance(event, TranscriptSegment):
+            if isinstance(event, AggregatedTurn):
+                self._update_transcript_turn(event)
+            elif isinstance(event, TranscriptSegment):
                 self._update_transcript(event)
             elif isinstance(event, SummaryUpdate):
                 self._update_summary(event)
@@ -407,6 +438,19 @@ class RealtimeApp(App):
         text.append(f"[{ts}] ", style="dim")
         text.append(f"{speaker}: ", style=style)
         text.append(segment.text)
+        log.write(text)
+
+    def _update_transcript_turn(self, turn: AggregatedTurn) -> None:
+        log = self.query_one("#transcript", TranscriptLog)
+        speaker = turn.speaker
+        style = "bold cyan" if speaker == "Me" else "bold magenta"
+        mins = int(turn.timestamp_start) // 60
+        secs = int(turn.timestamp_start) % 60
+        ts = f"{mins}:{secs:02d}"
+        text = Text()
+        text.append(f"[{ts}] ", style="dim")
+        text.append(f"{speaker}: ", style=style)
+        text.append(turn.text)
         log.write(text)
 
     def _update_summary(self, update: SummaryUpdate) -> None:
@@ -520,6 +564,10 @@ class RealtimeApp(App):
         status = self.query_one("#status", StatusLine)
         status.update("Shutting down...")
 
+        if self._aggregator:
+            self._aggregator.flush_remaining()
+        if self._bridge_task and not self._bridge_task.done():
+            self._bridge_task.cancel()
         if self._consumer_task and not self._consumer_task.done():
             self._consumer_task.cancel()
         if self._status_task and not self._status_task.done():
