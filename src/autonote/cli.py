@@ -184,6 +184,15 @@ def setup_parser() -> argparse.ArgumentParser:
     realtime_parser.add_argument("-m", "--model", help="LLM model or preset for reasoning (fast, smart, cheap, local)")
     realtime_parser.add_argument("--profile", help="Path to mission profile YAML for coach mode (e.g. examples/profiles/negotiation.yaml)")
 
+    # realtime-web
+    rtweb_parser = subparsers.add_parser("realtime-web", help="Web-based live meeting copilot (browser UI)")
+    rtweb_parser.add_argument("-t", "--title", help="Meeting title")
+    rtweb_parser.add_argument("-k", "--api-key", help="AssemblyAI API key")
+    rtweb_parser.add_argument("-m", "--model", help="LLM model or preset for reasoning (fast, smart, cheap, local)")
+    rtweb_parser.add_argument("--profile", help="Path to mission profile YAML for coach mode")
+    rtweb_parser.add_argument("--port", type=int, default=8765, help="Web server port (default: 8765)")
+    rtweb_parser.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
+
     return parser
 
 def cmd_list(args):
@@ -456,6 +465,21 @@ def cmd_realtime(args):
         profile=profile,
     )
 
+def cmd_realtime_web(args):
+    from autonote.realtime.web import run_web_app
+    profile = None
+    if getattr(args, 'profile', None):
+        from autonote.reasoning.mission import MissionBrief
+        profile = MissionBrief.from_yaml(args.profile)
+    run_web_app(
+        api_key=getattr(args, 'api_key', None),
+        model=getattr(args, 'model', None),
+        title=getattr(args, 'title', '') or '',
+        profile=profile,
+        host=args.host,
+        port=args.port,
+    )
+
 def main():
     try:
         _dispatch()
@@ -516,6 +540,8 @@ def _dispatch():
         cmd_full(args)
     elif args.command == "realtime":
         cmd_realtime(args)
+    elif args.command == "realtime-web":
+        cmd_realtime_web(args)
     else:
         print(f"Command {args.command} is not implemented yet.")
         sys.exit(1)
