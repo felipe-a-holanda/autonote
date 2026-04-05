@@ -48,15 +48,17 @@ def configure_file_logging(prefix: str = "autonote") -> pathlib.Path:
     """
     ts = time.strftime("%Y%m%d_%H%M%S")
     path = pathlib.Path(f"{prefix}_{ts}.log")
-    # Ensure autonote-namespaced loggers emit DEBUG+ so INFO pipeline messages
-    # reach the file handler (root logger defaults to WARNING which would drop them).
+    # Keep root at WARNING so noisy third-party libs (websockets, httpcore, LiteLLM)
+    # don't flood the log with binary frame dumps.  Only autonote-namespaced loggers
+    # need DEBUG+ so pipeline INFO messages reach the file handler.
+    logging.getLogger().setLevel(logging.WARNING)
     logging.getLogger("autonote").setLevel(logging.DEBUG)
     root = logging.getLogger()
     for h in root.handlers:
         if isinstance(h, logging.FileHandler) and h.baseFilename == str(path.resolve()):
             return path
     handler = logging.FileHandler(path, encoding="utf-8")
-    handler.setLevel(logging.DEBUG)
+    handler.setLevel(logging.DEBUG)  # logger-level filtering handles third-party noise
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s"))
     root.addHandler(handler)
     return path
