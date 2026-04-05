@@ -757,10 +757,22 @@ class RealtimeApp(App):
         path.write_text(content)
         self._debug(f"Exported to {path.resolve()}", "ok")
 
+    async def _auto_save_debug_log(self) -> None:
+        """Automatically save debug log to a timestamped file on exit."""
+        import pathlib
+        debug_log = self.query_one("#debug", DebugLog)
+        content = debug_log.export()
+        if content:
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            path = pathlib.Path(f"autonote_debug_{ts}.txt")
+            path.write_text(content)
+            logger.info("Debug log saved to %s", path.resolve())
+
     async def action_quit(self) -> None:
         """Graceful shutdown."""
         status = self.query_one("#status", StatusLine)
         status.update("Shutting down...")
+        await self._auto_save_debug_log()
 
         if self._aggregator:
             self._aggregator.flush_remaining()
@@ -791,6 +803,8 @@ def run_realtime_app(
     profile=None,
 ) -> None:
     """Entry point for ``autonote realtime``."""
+    from autonote.logger import configure_file_logging
+    configure_file_logging("autonote_realtime")
     app = RealtimeApp(
         api_key=api_key,
         model=model,

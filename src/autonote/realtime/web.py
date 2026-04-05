@@ -336,6 +336,10 @@ def run_web_app(
     _meeting_title = title
     _profile = profile
 
+    from autonote.logger import configure_file_logging
+    log_path = configure_file_logging("autonote_realtime_web")
+    logger.info("Log file: %s", log_path.resolve())
+
     import uvicorn
 
     logger.info("Starting web UI at http://%s:%d", host, port)
