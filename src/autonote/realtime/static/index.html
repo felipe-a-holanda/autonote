@@ -163,6 +163,43 @@
   #coach-current-body .confidence {
     font-size: 11px;
   }
+  /* Coach queue controls */
+  .coach-controls {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+  }
+  .coach-badge {
+    background: var(--accent);
+    color: white;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 700;
+  }
+  .coach-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .coach-btn:hover { background: var(--border); color: var(--text); }
+  @keyframes coachPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.25); }
+  }
+  .coach-pulse { animation: coachPulse 0.4s ease-in-out 3; }
+  @keyframes coachFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .coach-fade-in { animation: coachFadeIn 0.2s ease-out; }
   #coach-log {
     flex: 1;
     display: flex;
@@ -284,6 +321,11 @@
       <div class="panel-header">Coach</div>
       <div id="coach-current" class="coach-zone">
         <div class="zone-label">Say This</div>
+        <div id="coach-controls" class="coach-controls" style="display:none">
+          <span id="coach-badge" class="coach-badge"></span>
+          <button id="coach-next-btn" class="coach-btn">Next &rarr;</button>
+          <button id="coach-latest-btn" class="coach-btn" style="display:none">Latest &raquo;</button>
+        </div>
         <div id="coach-current-body">Waiting for coach...</div>
       </div>
       <div id="coach-log" class="coach-zone">
@@ -369,6 +411,10 @@ function formatTime(seconds) {
 function now() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
+
+// Coach queue state
+const coachQueue = [];
+let coachCurrent = null;
 
 function autoScroll(el) {
   if (el.dataset.userScrolled !== 'true') {
@@ -470,14 +516,9 @@ function handleReply(event) {
 function handleCoach(event) {
   const tag = event.should_speak ? 'SPEAK' : 'WAIT';
   const tagCls = event.should_speak ? 'label-speak' : 'label-wait';
+  const entry = { tag, tagCls, event };
 
-  // Top zone: replace with latest suggestion only
-  $('coach-current-body').innerHTML =
-    `<span class="entry-label ${tagCls}">${tag}</span>` +
-    `<span class="confidence">${event.confidence}</span>` +
-    `<div style="margin-top:6px">${escapeHtml(event.suggestion)}</div>`;
-
-  // Bottom zone: append full entry to scrollable log
+  // Bottom zone: always append immediately
   const log = $('coach-log-body');
   const div = document.createElement('div');
   div.className = 'coach-entry';
@@ -490,6 +531,57 @@ function handleCoach(event) {
     `<div class="dim">${escapeHtml(event.reasoning)}</div>`;
   log.appendChild(div);
   autoScroll(log);
+
+  // Top zone: show immediately if first, otherwise queue
+  if (coachCurrent === null) {
+    showCoachEntry(entry);
+  } else {
+    coachQueue.push(entry);
+    updateCoachControls();
+  }
+}
+
+function showCoachEntry(entry) {
+  coachCurrent = entry;
+  const body = $('coach-current-body');
+  body.innerHTML =
+    `<span class="entry-label ${entry.tagCls}">${entry.tag}</span>` +
+    `<span class="confidence">${entry.event.confidence}</span>` +
+    `<div style="margin-top:6px">${escapeHtml(entry.event.suggestion)}</div>`;
+  body.classList.remove('coach-fade-in');
+  void body.offsetWidth;
+  body.classList.add('coach-fade-in');
+}
+
+function advanceCoach() {
+  if (coachQueue.length === 0) return;
+  showCoachEntry(coachQueue.shift());
+  updateCoachControls();
+}
+
+function skipToLatestCoach() {
+  if (coachQueue.length === 0) return;
+  const latest = coachQueue[coachQueue.length - 1];
+  coachQueue.length = 0;
+  showCoachEntry(latest);
+  updateCoachControls();
+}
+
+function updateCoachControls() {
+  const controls = $('coach-controls');
+  const badge = $('coach-badge');
+  const latestBtn = $('coach-latest-btn');
+  const count = coachQueue.length;
+  if (count === 0) {
+    controls.style.display = 'none';
+    return;
+  }
+  controls.style.display = 'flex';
+  badge.textContent = count;
+  badge.classList.remove('coach-pulse');
+  void badge.offsetWidth;
+  badge.classList.add('coach-pulse');
+  latestBtn.style.display = count >= 2 ? 'inline-block' : 'none';
 }
 
 // --- Custom Prompt Result (append to alerts) ---
@@ -508,6 +600,9 @@ function handleCustom(event) {
 }
 
 // --- Input ---
+
+$('coach-next-btn').addEventListener('click', advanceCoach);
+$('coach-latest-btn').addEventListener('click', skipToLatestCoach);
 
 $('prompt-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
