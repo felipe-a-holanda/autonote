@@ -42,6 +42,7 @@ _transcriber = None
 _aggregator = None
 _pipeline_tasks: list[asyncio.Task] = []
 _transcript_path: Optional[Path] = None
+_transcript_txt_path: Optional[Path] = None
 
 # Configuration injected before server starts
 _api_key: Optional[str] = None
@@ -84,7 +85,7 @@ async def _consume_segments() -> None:
 
 
 def _append_transcript(segment: TranscriptSegment | AggregatedTurn) -> None:
-    """Append a transcript entry as JSONL."""
+    """Append a transcript entry as JSONL and (for complete turns) as plain text."""
     if _transcript_path is None:
         return
     try:
@@ -102,11 +103,20 @@ def _append_transcript(segment: TranscriptSegment | AggregatedTurn) -> None:
             f.write(json.dumps(record) + "\n")
     except Exception as exc:
         logger.warning("Failed to write transcript line: %s", exc)
+        return
+    if _transcript_txt_path is not None and isinstance(segment, AggregatedTurn):
+        try:
+            import time
+            ts = time.strftime("%H:%M:%S", time.gmtime())
+            with open(_transcript_txt_path, "a", encoding="utf-8") as f:
+                f.write(f"[{ts}] {segment.speaker}: {segment.text}\n")
+        except Exception as exc:
+            logger.warning("Failed to write transcript txt line: %s", exc)
 
 
 async def _start_pipeline() -> None:
     """Initialize and start the full pipeline."""
-    global _context_manager, _recorder, _transcriber, _aggregator, _transcript_path
+    global _context_manager, _recorder, _transcriber, _aggregator, _transcript_path, _transcript_txt_path
 
     from autonote.realtime.aggregator import TurnAggregator
     from autonote.realtime.recorder import RealtimeRecorder
@@ -126,6 +136,7 @@ async def _start_pipeline() -> None:
     await _recorder.start(title=_meeting_title)
     if _recorder.meeting_dir:
         _transcript_path = Path(_recorder.meeting_dir) / "transcript.jsonl"
+        _transcript_txt_path = Path(_recorder.meeting_dir) / "transcript.txt"
     mode = "mic + system" if _recorder.has_monitor else "mic only"
     _debug(f"Recorder started ({mode})")
 

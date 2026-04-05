@@ -292,6 +292,7 @@ class RealtimeApp(App):
         self._status_task: Optional[asyncio.Task] = None
         self._silence_timer_task: Optional[asyncio.Task] = None
         self._transcript_path: Optional[Path] = None
+        self._transcript_txt_path: Optional[Path] = None
 
         # Connection state tracking
         self._sessions_ready: set[str] = set()
@@ -397,6 +398,7 @@ class RealtimeApp(App):
 
             if self._recorder.meeting_dir:
                 self._transcript_path = Path(self._recorder.meeting_dir) / "transcript.jsonl"
+                self._transcript_txt_path = Path(self._recorder.meeting_dir) / "transcript.txt"
                 self._debug(f"Transcript → {self._transcript_path}", "ok")
 
             mode = "mic + system" if self._recorder.has_monitor else "mic only"
@@ -502,12 +504,13 @@ class RealtimeApp(App):
         if self._transcript_path is None:
             return
         try:
+            wall_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             record = {
                 "speaker": segment.speaker,
                 "text": segment.text,
                 "start": round(segment.timestamp_start, 3),
                 "end": round(segment.timestamp_end, 3),
-                "wall_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "wall_time": wall_time,
             }
             if isinstance(segment, AggregatedTurn):
                 record["segment_count"] = segment.segment_count
@@ -515,6 +518,14 @@ class RealtimeApp(App):
                 f.write(json.dumps(record) + "\n")
         except Exception as exc:
             logger.warning("Failed to write transcript line: %s", exc)
+            return
+        if self._transcript_txt_path is not None and isinstance(segment, AggregatedTurn):
+            try:
+                ts = time.strftime("%H:%M:%S", time.gmtime())
+                with self._transcript_txt_path.open("a", encoding="utf-8") as f:
+                    f.write(f"[{ts}] {segment.speaker}: {segment.text}\n")
+            except Exception as exc:
+                logger.warning("Failed to write transcript txt line: %s", exc)
 
     async def _handle_event(self, event: RealtimeEvent) -> None:
         """Route a realtime event to the appropriate TUI widget."""
