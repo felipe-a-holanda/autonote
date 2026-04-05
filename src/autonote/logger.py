@@ -48,9 +48,10 @@ def configure_file_logging(prefix: str = "autonote") -> pathlib.Path:
     """
     ts = time.strftime("%Y%m%d_%H%M%S")
     path = pathlib.Path(f"{prefix}_{ts}.log")
+    # Ensure autonote-namespaced loggers emit DEBUG+ so INFO pipeline messages
+    # reach the file handler (root logger defaults to WARNING which would drop them).
+    logging.getLogger("autonote").setLevel(logging.DEBUG)
     root = logging.getLogger()
-    if root.level == logging.NOTSET:
-        root.setLevel(logging.DEBUG)
     for h in root.handlers:
         if isinstance(h, logging.FileHandler) and h.baseFilename == str(path.resolve()):
             return path
