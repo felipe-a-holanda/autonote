@@ -52,6 +52,7 @@ class TranscriptLog(RichLog):
         border-title-color: $text;
         scrollbar-size: 1 1;
         height: 1fr;
+        overflow-x: hidden;
     }
     """
 
@@ -168,7 +169,7 @@ class DebugLog(RichLog):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(highlight=False, markup=True, wrap=True, **kwargs)
-        self.border_title = "Debug  [dim](d=export)[/dim]"
+        self.border_title = "Debug  [dim](d=toggle, e=export)[/dim]"
         self._lines: list[str] = []
 
     def log(self, msg: str, level: str = "info") -> None:
@@ -260,7 +261,8 @@ class RealtimeApp(App):
         Binding("c", "request_contradictions", "Contradictions", show=True),
         Binding("r", "request_reply", "Reply", show=True),
         Binding("p", "request_coach", "Coach", show=True),
-        Binding("d", "export_debug", "Export Debug", show=True),
+        Binding("d", "toggle_debug", "Debug Panel", show=True),
+        Binding("e", "export_debug", "Export Debug", show=False),
         Binding("ctrl+c", "quit", "Stop Recording", priority=True, show=False),
     ]
 
@@ -685,8 +687,13 @@ class RealtimeApp(App):
         if self._context_manager:
             asyncio.create_task(self._context_manager.handle_coach_request())
 
+    def action_toggle_debug(self) -> None:
+        """Handle the 'd' key — show/hide the debug panel."""
+        debug = self.query_one("#debug", DebugLog)
+        debug.display = not debug.display
+
     async def action_export_debug(self) -> None:
-        """Handle the 'd' key — export debug log to a timestamped file."""
+        """Handle the 'e' key — export debug log to a timestamped file."""
         import pathlib
         debug_log = self.query_one("#debug", DebugLog)
         content = debug_log.export()
