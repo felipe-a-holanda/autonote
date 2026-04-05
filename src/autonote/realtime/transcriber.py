@@ -167,6 +167,7 @@ class RealtimeTranscriber:
         client = StreamingClient(options=options)
 
         def on_turn(c, event) -> None:
+            wall_now = time.time()
             self._on_data_calls[speaker_label] = self._on_data_calls.get(speaker_label, 0) + 1
             text = event.transcript.strip()
             if not text:
@@ -175,11 +176,16 @@ class RealtimeTranscriber:
 
             is_final = event.end_of_turn
             kind = "final" if is_final else "partial"
-            self._dbg(f"[{speaker_label}] {kind}: \"{text[:60]}\"", "ok" if is_final else "info")
 
             # Timestamps from word boundaries (ms → s)
             ts_start = event.words[0].start / 1000.0 if event.words else 0.0
             ts_end = event.words[-1].end / 1000.0 if event.words else 0.0
+
+            self._dbg(
+                f"[{speaker_label}] {kind}: \"{text[:50]}\" "
+                f"[aai={ts_start:.2f}–{ts_end:.2f}s]",
+                "ok" if is_final else "info",
+            )
 
             segment = TranscriptSegment(
                 speaker=speaker_label,
@@ -187,6 +193,7 @@ class RealtimeTranscriber:
                 timestamp_start=ts_start,
                 timestamp_end=ts_end,
                 is_partial=not is_final,
+                received_wall_time=wall_now,
             )
 
             if self._loop is not None and self._running:

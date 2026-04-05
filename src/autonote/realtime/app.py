@@ -173,7 +173,8 @@ class DebugLog(RichLog):
         self._lines: list[str] = []
 
     def log(self, msg: str, level: str = "info") -> None:
-        ts = time.strftime("%H:%M:%S")
+        ms = int(time.time() * 1000) % 1000
+        ts = f"{time.strftime('%H:%M:%S')}.{ms:03d}"
         color = {"info": "dim", "ok": "green", "warn": "yellow", "error": "red"}.get(level, "dim")
         self._lines.append(f"[{ts}] {msg}")
         self.write(Text.from_markup(f"[dim]{ts}[/dim] [{color}]{msg}[/{color}]"))
@@ -289,6 +290,7 @@ class RealtimeApp(App):
         self._bridge_task: Optional[asyncio.Task] = None
         self._consumer_task: Optional[asyncio.Task] = None
         self._status_task: Optional[asyncio.Task] = None
+        self._silence_timer_task: Optional[asyncio.Task] = None
         self._transcript_path: Optional[Path] = None
 
         # Connection state tracking
@@ -312,7 +314,29 @@ class RealtimeApp(App):
         yield Footer()
 
     async def on_mount(self) -> None:
-        """Start the recording pipeline when the app mounts."""
+        """Apply profile panel visibility, then start the pipeline."""
+        if self._profile is not None:
+            p = self._profile.panels
+            if not p.summary:
+                self.query_one("#summary", SummaryPanel).display = False
+            if not p.action_items:
+                self.query_one("#action-items", ActionItemsPanel).display = False
+            if not p.alerts:
+                self.query_one("#alerts", AlertsPanel).display = False
+            if not p.coach:
+                self.query_one("#coach", CoachPanel).display = False
+            if not p.debug:
+                self.query_one("#debug", DebugLog).display = False
+            # Apply optional max-height overrides
+            _height_map = [
+                ("#summary", SummaryPanel, p.summary_max_height),
+                ("#action-items", ActionItemsPanel, p.action_items_max_height),
+                ("#alerts", AlertsPanel, p.alerts_max_height),
+                ("#coach", CoachPanel, p.coach_max_height),
+            ]
+            for widget_id, widget_cls, max_h in _height_map:
+                if max_h is not None:
+                    self.query_one(widget_id, widget_cls).styles.max_height = max_h
         self._start_pipeline()
 
     def _debug(self, msg: str, level: str = "info") -> None:
@@ -408,13 +432,20 @@ class RealtimeApp(App):
                 on_debug=self._debug,
                 mission_brief=self._profile,
             )
+            if self._profile is not None:
+                self._debug(f"Profile loaded: {self._profile.name}", "ok")
             self._debug("Reasoning engine ready", "ok")
 
             # 5. Instantiate aggregator and start bridge + consumer tasks
-            self._aggregator = TurnAggregator()
+            agg_kwargs: dict = {}
+            if self._profile is not None:
+                agg_kwargs["silence_threshold"] = self._profile.silence_threshold
+                agg_kwargs["max_turn_duration"] = self._profile.max_turn_duration
+            self._aggregator = TurnAggregator(**agg_kwargs, on_debug=self._debug)
             self._bridge_task = asyncio.create_task(self._bridge_segments())
             self._consumer_task = asyncio.create_task(self._consume_segments())
             self._status_task = asyncio.create_task(self._update_status_loop())
+            self._silence_timer_task = asyncio.create_task(self._aggregator.run_silence_timer())
             self._debug("Pipeline running — waiting for speech", "ok")
 
         except Exception as exc:
@@ -449,10 +480,20 @@ class RealtimeApp(App):
                 break
             if isinstance(item, TranscriptSegment):
                 # Partial — display only, skip context manager
+                if not item.is_partial and item.received_wall_time > 0:
+                    delay_ms = (time.time() - item.received_wall_time) * 1000
+                    self._debug(
+                        f"[{item.speaker}] pipe: final dequeued +{delay_ms:.0f}ms after AAI"
+                    )
                 await self._handle_event(item)
             elif isinstance(item, AggregatedTurn):
                 turn_count += 1
-                self._debug(f"Turn #{turn_count} [{item.speaker}]: {item.text[:60]}")
+                dequeue_ms = (time.time() - item.flushed_wall_time) * 1000 if item.flushed_wall_time > 0 else -1
+                held_ms = (item.flushed_wall_time - item.first_received_wall_time) * 1000 if item.first_received_wall_time > 0 else -1
+                self._debug(
+                    f"Turn #{turn_count} [{item.speaker}]: {item.text[:50]} "
+                    f"[held={held_ms:.0f}ms dequeue=+{dequeue_ms:.0f}ms]"
+                )
                 self._append_transcript(item)
                 await self._context_manager.on_new_turn(item)
 
@@ -533,6 +574,11 @@ class RealtimeApp(App):
         if segment.is_partial:
             self._update_partial_line(segment)
             return
+        render_ms = (time.time() - segment.received_wall_time) * 1000 if segment.received_wall_time > 0 else -1
+        self._debug(
+            f"[{segment.speaker}] TUI: rendering final \"{segment.text[:40]}\" "
+            f"[+{render_ms:.0f}ms from AAI]"
+        )
         log = self.query_one("#transcript", TranscriptLog)
         speaker = segment.speaker
         ts = self._format_timestamp(segment.timestamp_start)
@@ -543,6 +589,12 @@ class RealtimeApp(App):
         log.write(text)
 
     def _update_transcript_turn(self, turn: AggregatedTurn) -> None:
+        render_ms = (time.time() - turn.flushed_wall_time) * 1000 if turn.flushed_wall_time > 0 else -1
+        total_ms = (time.time() - turn.first_received_wall_time) * 1000 if turn.first_received_wall_time > 0 else -1
+        self._debug(
+            f"[{turn.speaker}] TUI: rendering turn n={turn.segment_count} "
+            f"[+{render_ms:.0f}ms from flush | +{total_ms:.0f}ms from first word]"
+        )
         self._clear_partial_line()
         log = self.query_one("#transcript", TranscriptLog)
         speaker = turn.speaker
@@ -613,7 +665,7 @@ class RealtimeApp(App):
             text += f"[dim]Argument: {suggestion.argument_used}[/dim]\n"
         text += f"[dim]{suggestion.reasoning}[/dim]"
         panel.update(text)
-        panel.border_title = "Custom Prompt Result"
+        panel.border_title = "Coach"
 
     # ------------------------------------------------------------------
     # Status updater
@@ -718,6 +770,8 @@ class RealtimeApp(App):
             self._consumer_task.cancel()
         if self._status_task and not self._status_task.done():
             self._status_task.cancel()
+        if self._silence_timer_task and not self._silence_timer_task.done():
+            self._silence_timer_task.cancel()
         if self._context_manager:
             await self._context_manager.shutdown()
         if self._transcriber:

@@ -28,6 +28,7 @@ class TranscriptSegment(BaseModel):
     timestamp_start: float
     timestamp_end: float
     is_partial: bool = False
+    received_wall_time: float = 0.0  # time.time() when AAI callback fired
 
 
 class AggregatedTurn(BaseModel):
@@ -41,6 +42,8 @@ class AggregatedTurn(BaseModel):
     segment_count: int
     wall_time_start: Optional[datetime] = None
     wall_time_end: Optional[datetime] = None
+    first_received_wall_time: float = 0.0  # time.time() of first segment's AAI callback
+    flushed_wall_time: float = 0.0  # time.time() when aggregator emitted this turn
 
     @field_validator("segment_count")
     @classmethod

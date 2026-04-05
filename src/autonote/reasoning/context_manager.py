@@ -53,6 +53,7 @@ class MeetingState:
     turns_since_last_summary: int = 0
     turns_since_last_action_scan: int = 0
     turns_since_last_coach: int = 0
+    turns_since_last_reply: int = 0
 
     def add_segment(self, segment: TranscriptSegment) -> None:
         self.segments.append(segment)
@@ -67,6 +68,7 @@ class MeetingState:
         self.turns_since_last_summary += 1
         self.turns_since_last_action_scan += 1
         self.turns_since_last_coach += 1
+        self.turns_since_last_reply += 1
 
     def get_transcript_text(self, last_n: Optional[int] = None) -> str:
         if last_n is not None:
@@ -110,22 +112,22 @@ DebugCallback = Callable[[str, str], None]
 class ContextManager:
     """Manages meeting state and triggers reasoning tasks on configurable thresholds.
 
+    All thresholds and mode toggles can be overridden via a MissionBrief profile.
+    When no profile is provided, defaults match the class-level constants below.
+
     Args:
         dispatcher: The LLM dispatcher for routing reasoning tasks.
-        on_event: Async callback invoked for every event (transcript segment,
-            summary update, action items, etc.). The TUI binds to this.
-        summary_every_n: Trigger summary update every N final segments.
-        action_scan_every_n: Trigger action item scan every N final segments.
-        contradiction_check_seconds: Interval for contradiction checks.
+        on_event: Async callback invoked for every event.
+        mission_brief: Optional profile that overrides all thresholds and toggles.
         session_id: Identifier for this meeting session.
     """
 
-    SUMMARY_EVERY_N_SEGMENTS: int = 10
-    ACTION_SCAN_EVERY_N_SEGMENTS: int = 5
+    # Defaults — used when no profile overrides them
     SUMMARY_EVERY_N_TURNS: int = 5
     ACTION_SCAN_EVERY_N_TURNS: int = 3
     CONTRADICTION_CHECK_SECONDS: int = 120
     COACH_EVERY_N_TURNS: int = 3
+    REPLY_EVERY_N_TURNS: int = 0  # 0 = manual only
 
     def __init__(
         self,
@@ -133,11 +135,6 @@ class ContextManager:
         on_event: EventCallback,
         *,
         on_debug: Optional[DebugCallback] = None,
-        summary_every_n: Optional[int] = None,
-        action_scan_every_n: Optional[int] = None,
-        summary_every_n_turns: Optional[int] = None,
-        action_scan_every_n_turns: Optional[int] = None,
-        contradiction_check_seconds: Optional[int] = None,
         mission_brief: Optional[MissionBrief] = None,
         session_id: str = "",
     ) -> None:
@@ -159,18 +156,13 @@ class ContextManager:
         self._reply_worker = ReplyWorker(dispatcher)
         self._coach_worker = CoachWorker(dispatcher)
 
-        if summary_every_n is not None:
-            self.SUMMARY_EVERY_N_SEGMENTS = summary_every_n
-        if action_scan_every_n is not None:
-            self.ACTION_SCAN_EVERY_N_SEGMENTS = action_scan_every_n
-        if summary_every_n_turns is not None:
-            self.SUMMARY_EVERY_N_TURNS = summary_every_n_turns
-        if action_scan_every_n_turns is not None:
-            self.ACTION_SCAN_EVERY_N_TURNS = action_scan_every_n_turns
-        if contradiction_check_seconds is not None:
-            self.CONTRADICTION_CHECK_SECONDS = contradiction_check_seconds
+        # Apply profile overrides if a brief is provided
         if mission_brief is not None:
+            self.SUMMARY_EVERY_N_TURNS = mission_brief.summary_every_n_turns
+            self.ACTION_SCAN_EVERY_N_TURNS = mission_brief.action_items_every_n_turns
+            self.CONTRADICTION_CHECK_SECONDS = mission_brief.contradictions_every_seconds
             self.COACH_EVERY_N_TURNS = mission_brief.coach_every_n_turns
+            self.REPLY_EVERY_N_TURNS = mission_brief.reply_every_n_turns
 
     async def on_new_segment(self, segment: TranscriptSegment) -> None:
         """Process a new transcript segment.
@@ -204,9 +196,15 @@ class ContextManager:
 
         Adds the turn to state, emits it via the event callback, and
         triggers reasoning tasks based on turn-count thresholds.
+        Mode toggles and thresholds come from the MissionBrief when provided.
         """
         self.state.add_turn(turn)
         await self.on_event(turn)
+
+        brief = self._mission_brief
+        summary_on = brief is None or brief.summary_enabled
+        actions_on = brief is None or brief.action_items_enabled
+        contradictions_on = brief is None or brief.contradictions_enabled
 
         n_turns = len(self.state.turns)
         self._debug(
@@ -215,20 +213,24 @@ class ContextManager:
             f"actions in {self.ACTION_SCAN_EVERY_N_TURNS - self.state.turns_since_last_action_scan} turns"
         )
 
-        if self.state.turns_since_last_summary >= self.SUMMARY_EVERY_N_TURNS:
+        if summary_on and self.state.turns_since_last_summary >= self.SUMMARY_EVERY_N_TURNS:
             self._fire_task(self._run_summary())
             self.state.turns_since_last_summary = 0
 
-        if self.state.turns_since_last_action_scan >= self.ACTION_SCAN_EVERY_N_TURNS:
+        if actions_on and self.state.turns_since_last_action_scan >= self.ACTION_SCAN_EVERY_N_TURNS:
             self._fire_task(self._run_action_items())
             self.state.turns_since_last_action_scan = 0
 
         now = time.time()
-        if now - self._last_contradiction_check >= self.CONTRADICTION_CHECK_SECONDS:
+        if contradictions_on and now - self._last_contradiction_check >= self.CONTRADICTION_CHECK_SECONDS:
             self._fire_task(self._run_contradictions())
             self._last_contradiction_check = now
 
-        if self._mission_brief and self.state.turns_since_last_coach >= self.COACH_EVERY_N_TURNS:
+        if self.REPLY_EVERY_N_TURNS > 0 and self.state.turns_since_last_reply >= self.REPLY_EVERY_N_TURNS:
+            self._fire_task(self._run_reply_auto())
+            self.state.turns_since_last_reply = 0
+
+        if self._mission_brief and self.COACH_EVERY_N_TURNS > 0 and self.state.turns_since_last_coach >= self.COACH_EVERY_N_TURNS:
             self._fire_task(self._run_coach())
             self.state.turns_since_last_coach = 0
 
@@ -364,6 +366,19 @@ class ContextManager:
         except Exception as exc:
             self._debug(f"LLM: action items failed — {exc}", "error")
             logger.warning("Action items task failed, skipping: %s", exc)
+
+    async def _run_reply_auto(self) -> None:
+        self._debug("LLM: auto reply suggestions...", "info")
+        try:
+            suggestion = await self._reply_worker.execute(
+                full_context=self.state.get_full_context(),
+                context_hint="Auto-triggered after turn.",
+            )
+            await self.on_event(suggestion)
+            self._debug("LLM: auto reply done", "ok")
+        except Exception as exc:
+            self._debug(f"LLM: auto reply failed — {exc}", "error")
+            logger.warning("Auto reply failed: %s", exc)
 
     async def _run_coach(self) -> None:
         self._debug("LLM: running coach...", "info")
