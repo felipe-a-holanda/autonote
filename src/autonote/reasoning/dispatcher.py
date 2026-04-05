@@ -49,7 +49,16 @@ class LLMDispatcher:
         prompt_template = PROMPT_MAP[task_name]
         prompt = prompt_template.format(**kwargs)
 
-        logger.debug("Dispatching task '%s' (prompt length: %d chars)", task_name, len(prompt))
+        logger.debug(
+            "Dispatching task '%s' (prompt length: %d chars)",
+            task_name, len(prompt),
+            extra={"structured": {
+                "event": "llm_request",
+                "task": task_name,
+                "model": self.model,
+                "prompt": prompt,
+            }},
+        )
 
         # query_llm is synchronous — run in thread to avoid blocking the event loop
         result = await asyncio.to_thread(
@@ -57,6 +66,17 @@ class LLMDispatcher:
             prompt=prompt,
             model=self.model,
             stage=f"realtime_{task_name}",
+        )
+
+        logger.debug(
+            "Task '%s' completed (%d chars)",
+            task_name, len(result),
+            extra={"structured": {
+                "event": "llm_response",
+                "task": task_name,
+                "response": result,
+                "response_len": len(result),
+            }},
         )
 
         return result

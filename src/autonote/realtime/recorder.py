@@ -378,6 +378,7 @@ class RealtimeRecorder:
         duration = time.monotonic() - self._start_time if self._start_time is not None else 0.0
 
         # Write metadata sidecar if we were saving to file
+        joined_file: Optional[str] = None
         if self._meeting_dir and self._audio_files:
             try:
                 meeting_dir = Path(self._meeting_dir)
@@ -389,13 +390,26 @@ class RealtimeRecorder:
             except Exception as exc:
                 logger.error("Failed to write recording metadata: %s", exc)
 
+            # Mix mic + monitor into a single joined WAV when both streams exist
+            if len(self._audio_files) == 2:
+                joined_path = Path(self._meeting_dir) / f"meeting_{self._timestamp}_joined.wav"
+                try:
+                    joined_file = await self._join_audio(
+                        self._audio_files[0], self._audio_files[1], str(joined_path)
+                    )
+                except Exception as exc:
+                    logger.error("Failed to create joined audio: %s", exc)
+
+        all_audio = list(self._audio_files)
+        if joined_file:
+            all_audio.append(joined_file)
         stats = RecordingStats(
             duration_seconds=duration,
             chunks_processed=self._chunks_processed,
             bytes_read=self._bytes_read,
             is_recording=False,
             file_path=self._meeting_dir,
-            audio_files=list(self._audio_files),
+            audio_files=all_audio,
         )
 
         self._is_recording = False
@@ -412,6 +426,34 @@ class RealtimeRecorder:
             duration, stats.chunks_processed, stats.bytes_read,
         )
         return stats
+
+    @staticmethod
+    async def _join_audio(mic_path: str, monitor_path: str, out_path: str) -> str:
+        """Mix mic and monitor WAV files into a single mono WAV using ffmpeg amix.
+
+        Returns the output path on success, raises RuntimeError on failure.
+        """
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", mic_path,
+            "-i", monitor_path,
+            "-filter_complex", "amix=inputs=2:duration=longest:normalize=0",
+            "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+            out_path,
+        ]
+        logger.info("Joining audio: %s + %s -> %s", mic_path, monitor_path, out_path)
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg amix failed (rc={proc.returncode}): {stderr.decode()[-500:]}"
+            )
+        logger.info("Joined audio written to %s", out_path)
+        return out_path
 
     async def _stop_process(self, proc: asyncio.subprocess.Process) -> None:
         """Send SIGINT to *proc*, wait up to 5 s, then SIGKILL if needed."""

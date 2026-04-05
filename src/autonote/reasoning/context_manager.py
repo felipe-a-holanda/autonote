@@ -207,11 +207,12 @@ class ContextManager:
         contradictions_on = brief is None or brief.contradictions_enabled
 
         n_turns = len(self.state.turns)
-        self._debug(
-            f"Turn #{n_turns} [{turn.speaker}] — "
-            f"summary in {self.SUMMARY_EVERY_N_TURNS - self.state.turns_since_last_summary} turns, "
-            f"actions in {self.ACTION_SCAN_EVERY_N_TURNS - self.state.turns_since_last_action_scan} turns"
-        )
+        if summary_on or actions_on:
+            self._debug(
+                f"Turn #{n_turns} [{turn.speaker}] — "
+                f"summary in {self.SUMMARY_EVERY_N_TURNS - self.state.turns_since_last_summary} turns, "
+                f"actions in {self.ACTION_SCAN_EVERY_N_TURNS - self.state.turns_since_last_action_scan} turns"
+            )
 
         if summary_on and self.state.turns_since_last_summary >= self.SUMMARY_EVERY_N_TURNS:
             self._fire_task(self._run_summary())
@@ -236,7 +237,7 @@ class ContextManager:
 
     async def handle_custom_prompt(self, prompt: str) -> None:
         """Run a user's freeform prompt against the meeting context."""
-        self._debug(f"LLM: custom prompt → {prompt[:60]}", "info")
+        self._debug(f"LLM: custom prompt → {prompt}", "info")
         try:
             timestamp = (
                 self.state.segments[-1].timestamp_end if self.state.segments else 0.0
@@ -368,7 +369,8 @@ class ContextManager:
             logger.warning("Action items task failed, skipping: %s", exc)
 
     async def _run_reply_auto(self) -> None:
-        self._debug("LLM: auto reply suggestions...", "info")
+        last_turn = self.state.turns[-1].text if self.state.turns else ""
+        self._debug(f"LLM: auto reply — last turn: \"{last_turn}\"", "info")
         try:
             suggestion = await self._reply_worker.execute(
                 full_context=self.state.get_full_context(),
@@ -389,6 +391,7 @@ class ContextManager:
             else:
                 recent = self.state.get_transcript_text(last_n=5)
                 timestamp = self.state.segments[-1].timestamp_end if self.state.segments else 0.0
+            self._debug(f"LLM: coach context (last 5 turns):\n{recent}", "info")
             suggestion = await self._coach_worker.execute(
                 full_context=self.state.get_full_context(),
                 recent_transcript=recent,

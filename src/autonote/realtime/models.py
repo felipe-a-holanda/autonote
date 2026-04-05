@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, computed_field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -29,6 +29,11 @@ class TranscriptSegment(BaseModel):
     timestamp_end: float
     is_partial: bool = False
     received_wall_time: float = 0.0  # time.time() when AAI callback fired
+
+    @computed_field
+    @property
+    def display_text(self) -> str:
+        return self.text
 
 
 class AggregatedTurn(BaseModel):
@@ -52,6 +57,11 @@ class AggregatedTurn(BaseModel):
             raise ValueError("segment_count must be >= 1")
         return v
 
+    @computed_field
+    @property
+    def display_text(self) -> str:
+        return self.text
+
 
 # ---------------------------------------------------------------------------
 # Reasoning outputs
@@ -63,6 +73,11 @@ class SummaryUpdate(BaseModel):
     type: Literal["summary_update"] = "summary_update"
     summary: str
     covered_until: float
+
+    @computed_field
+    @property
+    def display_text(self) -> str:
+        return self.summary
 
 
 class ActionItem(BaseModel):
@@ -93,6 +108,11 @@ class ContradictionAlert(BaseModel):
     statement_b_timestamp: float
     severity: Literal["low", "medium", "high"]
 
+    @computed_field
+    @property
+    def display_text(self) -> str:
+        return self.description
+
 
 class SpeechStateEvent(BaseModel):
     """VAD-detected speech state transition for a speaker stream."""
@@ -112,6 +132,11 @@ class ReplySuggestion(BaseModel):
     context: str
     triggered_by: Literal["auto", "manual"]
 
+    @computed_field
+    @property
+    def display_text(self) -> str:
+        return " | ".join(self.suggestions)
+
 
 class CustomPromptResult(BaseModel):
     """Result of a user's freeform prompt against meeting context."""
@@ -120,6 +145,11 @@ class CustomPromptResult(BaseModel):
     prompt: str
     result: str
     timestamp: float
+
+    @computed_field
+    @property
+    def display_text(self) -> str:
+        return self.result
 
 
 class CoachSuggestion(BaseModel):
@@ -132,6 +162,11 @@ class CoachSuggestion(BaseModel):
     reasoning: str
     confidence: Literal["high", "medium", "low"]
     timestamp: float
+
+    @computed_field
+    @property
+    def display_text(self) -> str:
+        return self.suggestion
 
 
 # ---------------------------------------------------------------------------

@@ -93,7 +93,7 @@ class TurnAggregator:
 
         buf_after = len(self._buffer) + 1
         self._dbg(
-            f"[{segment.speaker}] agg: buffered \"{segment.text[:40]}\" "
+            f"[{segment.speaker}] agg: buffered \"{segment.text}\" "
             f"aai={segment.timestamp_start:.2f}–{segment.timestamp_end:.2f}s"
             f"{gap_info} buf→{buf_after}"
         )
@@ -190,7 +190,7 @@ class TurnAggregator:
         self._dbg(
             f"[{turn.speaker}] agg: emitting turn n={turn.segment_count} "
             f"aai={turn.timestamp_start:.2f}–{turn.timestamp_end:.2f}s "
-            f"held={hold_ms:.0f}ms \"{text[:40]}\"",
+            f"held={hold_ms:.0f}ms \"{text}\"",
             "ok",
         )
 

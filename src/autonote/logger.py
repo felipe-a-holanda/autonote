@@ -1,7 +1,9 @@
+import json
 import logging
 import pathlib
 import sys
 import time
+from datetime import datetime, timezone
 from rich.console import Console
 from rich.theme import Theme
 from autonote.config import config
@@ -39,6 +41,46 @@ def log_warn(msg: str):
 def log_debug(msg: str):
     if config.get("DEBUG").lower() == "true":
         console.print(f"[debug][DEBUG] {msg}[/debug]")
+
+
+class _StructuredJsonFormatter(logging.Formatter):
+    """Emit each log record as a single JSON line.
+
+    If the record carries a ``structured`` extra dict, its keys are merged
+    into the envelope.  Otherwise a minimal ``{ts, level, logger, message}``
+    object is written.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict = {
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        structured = getattr(record, "structured", None)
+        if isinstance(structured, dict):
+            entry.update(structured)
+        return json.dumps(entry, ensure_ascii=False, default=str)
+
+
+def configure_json_logging(prefix: str = "autonote") -> pathlib.Path:
+    """Attach a JSONL FileHandler to the ``autonote`` logger namespace.
+
+    Safe to call multiple times — adds the handler only once per path.
+    """
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    path = pathlib.Path(f"{prefix}_{ts}.jsonl")
+    autonote_logger = logging.getLogger("autonote")
+    for h in autonote_logger.handlers:
+        if isinstance(h, logging.FileHandler) and h.baseFilename == str(path.resolve()):
+            return path
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(_StructuredJsonFormatter())
+    handler.addFilter(logging.Filter("autonote"))
+    autonote_logger.addHandler(handler)
+    return path
 
 
 def configure_file_logging(prefix: str = "autonote") -> pathlib.Path:

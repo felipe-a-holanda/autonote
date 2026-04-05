@@ -54,7 +54,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _debug(msg: str, level: str = "info") -> None:
-    logger.info("[web] %s", msg)
+    logger.debug("[web] %s", msg)
 
 
 async def _bridge_segments() -> None:
@@ -81,6 +81,7 @@ async def _consume_segments() -> None:
         elif isinstance(item, AggregatedTurn):
             turn_count += 1
             _append_transcript(item)
+            logger.info("[web] [→UI] %s: \"%s\"", item.speaker, item.text)
             await _context_manager.on_new_turn(item)
 
 
@@ -296,6 +297,17 @@ async def _ws_send(ws: WebSocket, queue: asyncio.Queue) -> None:
     """Forward events from the bus to the WebSocket client."""
     while True:
         msg = await queue.get()
+        try:
+            data = json.loads(msg)
+            event_type = data.get("type", "unknown")
+            display = data.get("display_text") or ""
+            speaker = data.get("speaker", "")
+            prefix = f"{speaker} " if speaker else ""
+            _LLM_EVENT_TYPES = {"coach_suggestion", "reply_suggestion", "summary_update", "custom_prompt_result", "contradiction_alert"}
+            log = logger.info if event_type in _LLM_EVENT_TYPES else logger.debug
+            log("[web] [ws→UI] %s%s: \"%s\"", prefix, event_type, display)
+        except Exception:
+            logger.debug("[web] [ws→UI] (unparseable)")
         await ws.send_text(msg)
 
 
@@ -347,9 +359,11 @@ def run_web_app(
     _meeting_title = title
     _profile = profile
 
-    from autonote.logger import configure_file_logging
+    from autonote.logger import configure_file_logging, configure_json_logging
     log_path = configure_file_logging("autonote_realtime_web")
+    json_log_path = configure_json_logging("autonote_realtime_web")
     logger.info("Log file: %s", log_path.resolve())
+    logger.info("Structured log: %s", json_log_path.resolve())
 
     import uvicorn
 

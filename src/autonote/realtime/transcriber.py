@@ -182,7 +182,7 @@ class RealtimeTranscriber:
             ts_end = event.words[-1].end / 1000.0 if event.words else 0.0
 
             self._dbg(
-                f"[{speaker_label}] {kind}: \"{text[:50]}\" "
+                f"[{speaker_label}] {kind}: \"{text}\" "
                 f"[aai={ts_start:.2f}–{ts_end:.2f}s]",
                 "ok" if is_final else "info",
             )

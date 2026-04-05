@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import re
@@ -8,6 +9,8 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from autonote.logger import log_error, log_info
 from autonote.config import config, DEFAULT_MODEL
+
+_logger = logging.getLogger(__name__)
 
 # Turn off litellm telemetry and set reasonable defaults
 litellm.telemetry = False
@@ -182,10 +185,36 @@ def query_llm(
 
                 log_info(f"LLM Usage: {total_t} tokens (In: {prompt_t}, Out: {completion_t}){cost_str} [{duration_s:.1f}s]")
                 _append_cost_log(model, prompt_t, completion_t, total_t, cost, brl_cost, source_file, stage, duration_s)
+                _logger.debug(
+                    "LLM usage: %s %d tokens [%.1fs]", model, total_t, duration_s,
+                    extra={"structured": {
+                        "event": "llm_usage",
+                        "model": model,
+                        "stage": stage,
+                        "tokens_in": prompt_t,
+                        "tokens_out": completion_t,
+                        "tokens_total": total_t,
+                        "cost_usd": round(cost, 8),
+                        "duration_s": round(duration_s, 2),
+                    }},
+                )
             except Exception:
                 # Fallback if cost calculation fails (e.g. unknown local model)
                 log_info(f"LLM Usage: {total_t} tokens (In: {prompt_t}, Out: {completion_t}) [{duration_s:.1f}s]")
                 _append_cost_log(model, prompt_t, completion_t, total_t, 0.0, None, source_file, stage, duration_s)
+                _logger.debug(
+                    "LLM usage: %s %d tokens [%.1fs]", model, total_t, duration_s,
+                    extra={"structured": {
+                        "event": "llm_usage",
+                        "model": model,
+                        "stage": stage,
+                        "tokens_in": prompt_t,
+                        "tokens_out": completion_t,
+                        "tokens_total": total_t,
+                        "cost_usd": 0.0,
+                        "duration_s": round(duration_s, 2),
+                    }},
+                )
 
         return response.choices[0].message.content
     except Exception as e:
