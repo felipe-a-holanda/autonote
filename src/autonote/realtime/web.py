@@ -49,6 +49,7 @@ _api_key: Optional[str] = None
 _model: Optional[str] = None
 _meeting_title: str = ""
 _profile = None  # MissionBrief or None
+_full_transcript: bool = False
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -161,6 +162,7 @@ async def _start_pipeline() -> None:
         on_event=_event_bus.publish,
         on_debug=_debug,
         mission_brief=_profile,
+        full_transcript=_full_transcript,
     )
     _debug("Reasoning engine ready")
 
@@ -232,7 +234,7 @@ async def get_config():
             },
         }
     return {
-        "panels": {"summary": True, "action_items": True, "alerts": True, "coach": True},
+        "panels": {"summary": True, "action_items": True, "alerts": True, "coach": False},
         "max_heights": {},
     }
 
@@ -351,13 +353,15 @@ def run_web_app(
     profile=None,
     host: str = "127.0.0.1",
     port: int = 8765,
+    full_transcript: bool = False,
 ) -> None:
     """Entry point for ``autonote realtime-web``."""
-    global _api_key, _model, _meeting_title, _profile
+    global _api_key, _model, _meeting_title, _profile, _full_transcript
     _api_key = api_key
     _model = model
     _meeting_title = title
     _profile = profile
+    _full_transcript = full_transcript
 
     from autonote.logger import configure_file_logging, configure_json_logging
     log_path = configure_file_logging("autonote_realtime_web")

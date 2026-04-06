@@ -88,7 +88,24 @@
     color: var(--dim);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
+  .panel-minimize {
+    background: transparent;
+    border: none;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+  }
+  .panel-minimize:hover { color: var(--text); }
+  .panel.minimized { flex: 0 0 auto !important; }
+  .panel.minimized .panel-body,
+  .panel.minimized .coach-zone { display: none; }
   .panel-body {
     flex: 1;
     overflow-y: auto;
@@ -339,7 +356,7 @@
   <!-- Right: Stacked panels -->
   <div class="right-col">
     <div id="coach-panel" class="panel">
-      <div class="panel-header">Coach</div>
+      <div class="panel-header"><span>Coach</span><button class="panel-minimize" data-panel="coach-panel" title="Minimize">&minus;</button></div>
       <div id="coach-current" class="coach-zone">
         <div class="zone-label">Say This</div>
         <div id="coach-controls" class="coach-controls" style="display:none">
@@ -358,15 +375,15 @@
       </div>
     </div>
     <div id="summary-panel" class="panel">
-      <div class="panel-header">Summary</div>
+      <div class="panel-header"><span>Summary</span><button class="panel-minimize" data-panel="summary-panel" title="Minimize">&minus;</button></div>
       <div id="summary-body" class="panel-body">Waiting for conversation...</div>
     </div>
     <div id="actions-panel" class="panel">
-      <div class="panel-header">Action Items</div>
+      <div class="panel-header"><span>Action Items</span><button class="panel-minimize" data-panel="actions-panel" title="Minimize">&minus;</button></div>
       <div id="actions-body" class="panel-body"></div>
     </div>
     <div id="alerts-panel" class="panel">
-      <div class="panel-header">Alerts &amp; Replies</div>
+      <div class="panel-header"><span>Alerts &amp; Replies</span><button class="panel-minimize" data-panel="alerts-panel" title="Minimize">&minus;</button></div>
       <div id="alerts-body" class="panel-body"></div>
     </div>
   </div>
@@ -751,6 +768,17 @@ document.querySelectorAll('.panel-body, #coach-log-body').forEach(el => {
   el.addEventListener('scroll', () => {
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     el.dataset.userScrolled = atBottom ? 'false' : 'true';
+  });
+});
+
+// --- Panel minimize/expand ---
+
+document.querySelectorAll('.panel-minimize').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const panel = $(btn.dataset.panel);
+    const minimized = panel.classList.toggle('minimized');
+    btn.innerHTML = minimized ? '+' : '&minus;';
+    btn.title = minimized ? 'Expand' : 'Minimize';
   });
 });
 

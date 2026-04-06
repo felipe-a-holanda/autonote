@@ -13,7 +13,7 @@ Mode configuration (all optional, sensible defaults):
   summary_every_n_turns / action_items_every_n_turns /
     contradictions_every_seconds — override default thresholds.
 
-Panel visibility (all default True except coach, which requires a profile):
+Panel visibility (all default True except coach, which defaults False / opt-in):
   panels.summary / panels.action_items / panels.alerts / panels.coach /
   panels.debug — show or hide each panel on startup.
 
@@ -38,7 +38,7 @@ class PanelConfig:
     summary: bool = True
     action_items: bool = True
     alerts: bool = True
-    coach: bool = True
+    coach: bool = False
     debug: bool = True
 
     summary_max_height: str | None = None
@@ -123,7 +123,7 @@ class MissionBrief:
             summary=panels_data.get("summary", True),
             action_items=panels_data.get("action_items", True),
             alerts=panels_data.get("alerts", True),
-            coach=panels_data.get("coach", True),
+            coach=panels_data.get("coach", False),
             debug=panels_data.get("debug", True),
             summary_max_height=panels_data.get("summary_max_height"),
             action_items_max_height=panels_data.get("action_items_max_height"),
