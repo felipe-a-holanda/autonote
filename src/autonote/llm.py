@@ -90,6 +90,34 @@ def _write_recording_cost(entry: Dict[str, Any], source_file: str) -> None:
         log_error(f"Failed to write recording cost file: {e}")
 
 
+def read_cost_summary(source_file: str) -> Optional[Dict[str, Any]]:
+    """Read the per-recording cost file and return aggregate totals.
+
+    Returns a dict with total tokens, cost_usd, cost_brl, and call_count,
+    or None if no cost file exists.
+    """
+    recording_dir, base = _recording_base(source_file)
+    cost_file = recording_dir / f"{base}_llm_costs.json"
+    if not cost_file.exists():
+        return None
+    try:
+        entries = json.loads(cost_file.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not entries:
+        return None
+    total_usd = sum(e.get("cost_usd", 0) or 0 for e in entries)
+    total_brl = sum(e.get("cost_brl", 0) or 0 for e in entries if e.get("cost_brl") is not None)
+    total_tokens = sum(e.get("tokens_total", 0) or 0 for e in entries)
+    has_brl = any(e.get("cost_brl") is not None for e in entries)
+    return {
+        "llm_calls": len(entries),
+        "total_tokens": total_tokens,
+        "total_cost_usd": round(total_usd, 6),
+        "total_cost_brl": round(total_brl, 4) if has_brl else None,
+    }
+
+
 def resolve_model(model: str) -> str:
     """Resolve a preset name or bare model name to a fully-qualified model string.
     

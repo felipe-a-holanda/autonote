@@ -116,6 +116,31 @@ def _append_transcript(segment: TranscriptSegment | AggregatedTurn) -> None:
             logger.warning("Failed to write transcript txt line: %s", exc)
 
 
+def _write_cost_to_metadata(meeting_dir: Optional[str]) -> None:
+    """Read LLM cost file and append totals to the meeting metadata JSON."""
+    if not meeting_dir:
+        return
+    md = Path(meeting_dir)
+    # Derive source_file the same way the dispatcher was configured
+    source_file = str(md / f"{md.name}_mic.wav")
+    try:
+        from autonote.llm import read_cost_summary
+        summary = read_cost_summary(source_file)
+        if not summary:
+            return
+        # Find and update the metadata JSON
+        metadata_files = list(md.glob("*_metadata.json"))
+        if not metadata_files:
+            return
+        meta_path = metadata_files[0]
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["llm_cost"] = summary
+        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.info("LLM cost totals written to %s", meta_path.name)
+    except Exception as exc:
+        logger.warning("Failed to write cost to metadata: %s", exc)
+
+
 async def _start_pipeline() -> None:
     """Initialize and start the full pipeline."""
     global _context_manager, _recorder, _transcriber, _aggregator, _transcript_path, _transcript_txt_path
@@ -156,7 +181,11 @@ async def _start_pipeline() -> None:
 
     # 4. Reasoning engine
     _debug(f"Loading LLM dispatcher (model={_model or 'default'})...")
-    dispatcher = LLMDispatcher(model=_model)
+    source_file = None
+    if _recorder.meeting_dir:
+        _md = Path(_recorder.meeting_dir)
+        source_file = str(_md / f"{_md.name}_mic.wav")
+    dispatcher = LLMDispatcher(model=_model, source_file=source_file)
     _context_manager = ContextManager(
         dispatcher=dispatcher,
         on_event=_event_bus.publish,
@@ -190,8 +219,10 @@ async def _stop_pipeline() -> None:
         await _context_manager.shutdown()
     if _transcriber:
         await _transcriber.stop()
+    meeting_dir = _recorder.meeting_dir if _recorder else None
     if _recorder and _recorder.is_recording:
         await _recorder.stop()
+    _write_cost_to_metadata(meeting_dir)
     _debug("Pipeline stopped")
 
 

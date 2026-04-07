@@ -90,3 +90,9 @@ list:
 # Remove all WAV/MP3 files (with confirmation)
 clean:
     autonote clean
+    
+    
+perigon:
+    autonote realtime-web --profile perigon_negotiation_coach.yaml --full-transcript --model smart
+    
+  

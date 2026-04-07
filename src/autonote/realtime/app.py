@@ -274,12 +274,14 @@ class RealtimeApp(App):
         model: Optional[str] = None,
         title: str = "",
         profile=None,
+        full_transcript: bool = False,
     ) -> None:
         super().__init__()
         self._api_key = api_key
         self._model = model
         self._meeting_title = title
         self._profile = profile  # Optional[MissionBrief]
+        self._full_transcript = full_transcript
 
         # Pipeline objects — created in on_mount
         self._recorder = None
@@ -427,12 +429,17 @@ class RealtimeApp(App):
 
             # 4. Set up reasoning engine
             self._debug(f"Loading LLM dispatcher (model={self._model or 'default'})...")
-            dispatcher = LLMDispatcher(model=self._model)
+            source_file = None
+            if self._recorder.meeting_dir:
+                _md = Path(self._recorder.meeting_dir)
+                source_file = str(_md / f"{_md.name}_mic.wav")
+            dispatcher = LLMDispatcher(model=self._model, source_file=source_file)
             self._context_manager = ContextManager(
                 dispatcher=dispatcher,
                 on_event=self._handle_event,
                 on_debug=self._debug,
                 mission_brief=self._profile,
+                full_transcript=self._full_transcript,
             )
             if self._profile is not None:
                 self._debug(f"Profile loaded: {self._profile.name}", "ok")
@@ -799,11 +806,36 @@ class RealtimeApp(App):
             await self._context_manager.shutdown()
         if self._transcriber:
             await self._transcriber.stop()
+        meeting_dir = self._recorder.meeting_dir if self._recorder else None
         if self._recorder and self._recorder.is_recording:
             stats = await self._recorder.stop()
             logger.info("Final recording stats: %s", stats)
 
+        self._write_cost_to_metadata(meeting_dir)
         self.exit()
+
+    @staticmethod
+    def _write_cost_to_metadata(meeting_dir: Optional[str]) -> None:
+        """Read LLM cost file and append totals to the meeting metadata JSON."""
+        if not meeting_dir:
+            return
+        md = Path(meeting_dir)
+        source_file = str(md / f"{md.name}_mic.wav")
+        try:
+            from autonote.llm import read_cost_summary
+            summary = read_cost_summary(source_file)
+            if not summary:
+                return
+            metadata_files = list(md.glob("*_metadata.json"))
+            if not metadata_files:
+                return
+            meta_path = metadata_files[0]
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["llm_cost"] = summary
+            meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+            logger.info("LLM cost totals written to %s", meta_path.name)
+        except Exception as exc:
+            logger.warning("Failed to write cost to metadata: %s", exc)
 
 
 def run_realtime_app(
@@ -812,6 +844,7 @@ def run_realtime_app(
     model: Optional[str] = None,
     title: str = "",
     profile=None,
+    full_transcript: bool = False,
 ) -> None:
     """Entry point for ``autonote realtime``."""
     from autonote.logger import configure_file_logging
@@ -821,5 +854,6 @@ def run_realtime_app(
         model=model,
         title=title,
         profile=profile,
+        full_transcript=full_transcript,
     )
     app.run()

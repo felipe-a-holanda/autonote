@@ -183,6 +183,7 @@ def setup_parser() -> argparse.ArgumentParser:
     realtime_parser.add_argument("-k", "--api-key", help="AssemblyAI API key")
     realtime_parser.add_argument("-m", "--model", help="LLM model or preset for reasoning (fast, smart, cheap, local)")
     realtime_parser.add_argument("--profile", help="Path to mission profile YAML for coach mode (e.g. examples/profiles/negotiation.yaml)")
+    realtime_parser.add_argument("--full-transcript", action="store_true", help="Send the full transcript to the LLM on every reasoning call (instead of a sliding window)")
 
     # realtime-web
     rtweb_parser = subparsers.add_parser("realtime-web", help="Web-based live meeting copilot (browser UI)")
@@ -192,6 +193,7 @@ def setup_parser() -> argparse.ArgumentParser:
     rtweb_parser.add_argument("--profile", help="Path to mission profile YAML for coach mode")
     rtweb_parser.add_argument("--port", type=int, default=8765, help="Web server port (default: 8765)")
     rtweb_parser.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
+    rtweb_parser.add_argument("--full-transcript", action="store_true", help="Send the full transcript to the LLM on every reasoning call (instead of a sliding window)")
 
     return parser
 
@@ -463,6 +465,7 @@ def cmd_realtime(args):
         model=getattr(args, 'model', None),
         title=getattr(args, 'title', '') or '',
         profile=profile,
+        full_transcript=getattr(args, 'full_transcript', False),
     )
 
 def cmd_realtime_web(args):
@@ -478,6 +481,7 @@ def cmd_realtime_web(args):
         profile=profile,
         host=args.host,
         port=args.port,
+        full_transcript=getattr(args, 'full_transcript', False),
     )
 
 def main():

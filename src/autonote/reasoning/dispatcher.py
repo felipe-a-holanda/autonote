@@ -29,8 +29,9 @@ class LLMDispatcher:
                Defaults to the user's configured MODEL from .autonoterc.
     """
 
-    def __init__(self, model: Optional[str] = None) -> None:
+    def __init__(self, model: Optional[str] = None, source_file: Optional[str] = None) -> None:
         self.model = model
+        self.source_file = source_file
 
     async def run(self, task_name: str, **kwargs: str) -> str:
         """Run a reasoning task by formatting a prompt and calling the LLM.
@@ -66,6 +67,7 @@ class LLMDispatcher:
             prompt=prompt,
             model=self.model,
             stage=f"realtime_{task_name}",
+            source_file=self.source_file,
         )
 
         logger.debug(

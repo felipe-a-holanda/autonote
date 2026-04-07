@@ -85,7 +85,7 @@ class MeetingState:
         source = self.turns[-last_n:] if last_n is not None else self.turns
         return "\n".join(f"{t.speaker}: {t.text}" for t in source)
 
-    def get_full_context(self) -> str:
+    def get_full_context(self, last_n: Optional[int] = 30) -> str:
         parts: list[str] = []
         if self.current_summary:
             parts.append(f"## Summary So Far\n{self.current_summary}")
@@ -96,10 +96,11 @@ class MeetingState:
             )
             parts.append(f"## Action Items\n{items_text}")
         if self.turns:
-            transcript = self.get_turn_transcript(last_n=30)
+            transcript = self.get_turn_transcript(last_n=last_n)
         else:
-            transcript = self.get_transcript_text(last_n=30)
-        parts.append(f"## Recent Transcript\n{transcript}")
+            transcript = self.get_transcript_text(last_n=last_n)
+        label = "Full Transcript" if last_n is None else "Recent Transcript"
+        parts.append(f"## {label}\n{transcript}")
         return "\n\n".join(parts)
 
 
@@ -137,6 +138,7 @@ class ContextManager:
         on_debug: Optional[DebugCallback] = None,
         mission_brief: Optional[MissionBrief] = None,
         session_id: str = "",
+        full_transcript: bool = False,
     ) -> None:
         self.state = MeetingState(
             session_id=session_id,
@@ -148,6 +150,7 @@ class ContextManager:
         self._running_tasks: set[asyncio.Task] = set()
         self._last_contradiction_check: float = time.time()
         self._mission_brief = mission_brief
+        self._full_transcript = full_transcript
 
         self._summary_worker = SummaryWorker(dispatcher)
         self._action_item_worker = ActionItemWorker(dispatcher)
@@ -243,7 +246,7 @@ class ContextManager:
                 self.state.segments[-1].timestamp_end if self.state.segments else 0.0
             )
             result = await self._custom_prompt_worker.execute(
-                full_context=self.state.get_full_context(),
+                full_context=self.state.get_full_context(last_n=self._window(30)),
                 user_prompt=prompt,
                 timestamp=timestamp,
             )
@@ -274,7 +277,7 @@ class ContextManager:
         """Generate reply suggestions based on the current meeting context."""
         try:
             suggestion = await self._reply_worker.execute(
-                full_context=self.state.get_full_context(),
+                full_context=self.state.get_full_context(last_n=self._window(30)),
                 context_hint=context_hint or "No specific context provided.",
             )
             await self.on_event(suggestion)
@@ -285,6 +288,10 @@ class ContextManager:
         """Manually trigger a coach suggestion (requires mission_brief to be set)."""
         if self._mission_brief:
             await self._run_coach()
+
+    def _window(self, default: int) -> Optional[int]:
+        """Return None (unlimited) when full_transcript mode is on, else default."""
+        return None if self._full_transcript else default
 
     def _debug(self, msg: str, level: str = "info") -> None:
         if self._on_debug is not None:
@@ -333,9 +340,9 @@ class ContextManager:
         self._debug("LLM: checking for contradictions...", "info")
         try:
             if self.state.turns:
-                recent_transcript = self.state.get_turn_transcript(last_n=20)
+                recent_transcript = self.state.get_turn_transcript(last_n=self._window(20))
             else:
-                recent_transcript = self.state.get_transcript_text(last_n=20)
+                recent_transcript = self.state.get_transcript_text(last_n=self._window(20))
             alerts = await self._contradiction_worker.execute(
                 current_summary=self.state.current_summary,
                 recent_transcript=recent_transcript,
@@ -351,11 +358,11 @@ class ContextManager:
         self._debug("LLM: scanning action items...", "info")
         try:
             if self.state.turns:
-                recent_transcript = self.state.get_turn_transcript(last_n=10)
+                recent_transcript = self.state.get_turn_transcript(last_n=self._window(10))
             else:
-                recent_transcript = self.state.get_transcript_text(last_n=10)
+                recent_transcript = self.state.get_transcript_text(last_n=self._window(10))
             updated_items = await self._action_item_worker.execute(
-                full_context=self.state.get_full_context(),
+                full_context=self.state.get_full_context(last_n=self._window(30)),
                 recent_transcript=recent_transcript,
                 existing_items=self.state.action_items,
             )
@@ -373,7 +380,7 @@ class ContextManager:
         self._debug(f"LLM: auto reply — last turn: \"{last_turn}\"", "info")
         try:
             suggestion = await self._reply_worker.execute(
-                full_context=self.state.get_full_context(),
+                full_context=self.state.get_full_context(last_n=self._window(30)),
                 context_hint="Auto-triggered after turn.",
             )
             await self.on_event(suggestion)
@@ -385,15 +392,17 @@ class ContextManager:
     async def _run_coach(self) -> None:
         self._debug("LLM: running coach...", "info")
         try:
+            recent_n = self._window(5)
             if self.state.turns:
-                recent = self.state.get_turn_transcript(last_n=5)
+                recent = self.state.get_turn_transcript(last_n=recent_n)
                 timestamp = self.state.turns[-1].timestamp_end
             else:
-                recent = self.state.get_transcript_text(last_n=5)
+                recent = self.state.get_transcript_text(last_n=recent_n)
                 timestamp = self.state.segments[-1].timestamp_end if self.state.segments else 0.0
-            self._debug(f"LLM: coach context (last 5 turns):\n{recent}", "info")
+            label = "full transcript" if self._full_transcript else "last 5 turns"
+            self._debug(f"LLM: coach context ({label}):\n{recent}", "info")
             suggestion = await self._coach_worker.execute(
-                full_context=self.state.get_full_context(),
+                full_context=self.state.get_full_context(last_n=self._window(30)),
                 recent_transcript=recent,
                 mission_brief_text=self._mission_brief.format_for_prompt(),  # type: ignore[union-attr]
                 timestamp=timestamp,

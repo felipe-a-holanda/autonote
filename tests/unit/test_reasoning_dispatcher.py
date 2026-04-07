@@ -39,6 +39,24 @@ class TestLLMDispatcher:
             assert f"realtime_{task_name}" == call_kwargs["stage"]
 
     @patch("autonote.reasoning.dispatcher.asyncio.to_thread")
+    async def test_run_passes_source_file_to_query_llm(self, mock_to_thread):
+        async def fake_to_thread(fn, **kwargs):
+            return fn(**kwargs)
+        mock_to_thread.side_effect = fake_to_thread
+
+        from autonote.reasoning.prompts import PROMPT_MAP
+        task_name = next(iter(PROMPT_MAP))
+        template = PROMPT_MAP[task_name]
+        import string
+        required_keys = {fname for _, fname, _, _ in string.Formatter().parse(template) if fname}
+        kwargs = {k: "x" for k in required_keys}
+
+        with patch("autonote.reasoning.dispatcher.query_llm", return_value="ok") as mock_llm:
+            dispatcher = LLMDispatcher(model="ollama/test", source_file="/tmp/meeting/meeting_mic.wav")
+            await dispatcher.run(task_name, **kwargs)
+            assert mock_llm.call_args[1]["source_file"] == "/tmp/meeting/meeting_mic.wav"
+
+    @patch("autonote.reasoning.dispatcher.asyncio.to_thread")
     async def test_run_uses_none_model_by_default(self, mock_to_thread):
         async def fake_to_thread(fn, **kwargs):
             return fn(**kwargs)
