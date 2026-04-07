@@ -301,6 +301,7 @@ class RealtimeRecorder:
             *mic_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
 
         # Launch monitor process (speaker_label="Them") if available
@@ -311,6 +312,7 @@ class RealtimeRecorder:
                 *monitor_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
 
         self._mic_source = mic_source

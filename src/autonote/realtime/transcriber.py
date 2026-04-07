@@ -16,6 +16,8 @@ import logging
 import time
 from typing import Optional, Callable, Awaitable
 
+import numpy as np
+
 from autonote.config import config
 from autonote.realtime.models import TranscriptSegment
 
@@ -61,6 +63,11 @@ class RealtimeTranscriber:
         self._on_debug = on_debug
         self._on_session_begin = on_session_begin
 
+        # Noise gate: RMS threshold below which mic audio is replaced with silence.
+        # Prevents leaked system audio (through headphones) from being transcribed as "Me".
+        # Set to 0 to disable.
+        self._noise_gate_rms = int(config.get("MIC_NOISE_GATE_RMS", "200"))
+
         # Public output queue — consumers read TranscriptSegments from here
         self.segment_queue: asyncio.Queue[TranscriptSegment | None] = asyncio.Queue()
 
@@ -74,6 +81,7 @@ class RealtimeTranscriber:
 
         # Debug counters
         self._chunks_fed: dict[str, int] = {"Me": 0, "Them": 0}
+        self._chunks_gated: dict[str, int] = {"Me": 0, "Them": 0}
         self._on_data_calls: dict[str, int] = {"Me": 0, "Them": 0}
         self._empty_data_calls: dict[str, int] = {"Me": 0, "Them": 0}
 
@@ -257,16 +265,30 @@ class RealtimeTranscriber:
                     continue
                 to_send = bytes(_buf)
                 _buf.clear()
+
+                # Noise gate: silence mic chunks below RMS threshold to prevent
+                # leaked system audio from being transcribed as "Me".
+                if speaker_label == "Me" and self._noise_gate_rms > 0:
+                    samples = np.frombuffer(to_send, dtype=np.int16)
+                    rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2))
+                    if rms < self._noise_gate_rms:
+                        to_send = b"\x00" * len(to_send)
+                        self._chunks_gated["Me"] = self._chunks_gated.get("Me", 0) + 1
+
                 client.stream(to_send)
                 self._chunks_fed[speaker_label] = self._chunks_fed.get(speaker_label, 0) + 1
                 n = self._chunks_fed[speaker_label]
                 if n == 1:
                     self._dbg(f"[{speaker_label}] first PCM chunk sent to AAI ({len(to_send)} B)", "ok")
+                    if speaker_label == "Me" and self._noise_gate_rms > 0:
+                        self._dbg(f"[Me] noise gate active (RMS threshold={self._noise_gate_rms})", "info")
                 elif n % _LOG_EVERY == 0:
                     empty = self._empty_data_calls.get(speaker_label, 0)
                     hits = self._on_data_calls.get(speaker_label, 0)
+                    gated = self._chunks_gated.get(speaker_label, 0)
                     self._dbg(
                         f"[{speaker_label}] {n} chunks fed | on_data: {hits} ({empty} empty)"
+                        + (f" | gated: {gated}" if gated else "")
                     )
         except asyncio.CancelledError:
             logger.debug("Feed loop (%s) cancelled", speaker_label)

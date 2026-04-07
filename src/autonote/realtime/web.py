@@ -233,8 +233,11 @@ async def _stop_pipeline() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _start_pipeline()
-    yield
-    await _stop_pipeline()
+    try:
+        yield
+    finally:
+        # Shield shutdown from cancellation so audio join and metadata write complete
+        await asyncio.shield(_stop_pipeline())
 
 
 app = FastAPI(lifespan=lifespan)
