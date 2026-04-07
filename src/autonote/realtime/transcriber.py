@@ -250,6 +250,16 @@ class RealtimeTranscriber:
         _MIN_SEND_BYTES = 3200
         _LOG_EVERY = 50
         _buf = bytearray()
+
+        # Noise gate state: pre-roll keeps recent chunks so word beginnings
+        # aren't lost; hold keeps the gate open after speech ends so word
+        # tails aren't clipped.
+        _PREROLL_CHUNKS = 3    # 300 ms lookback
+        _HOLD_CHUNKS = 5       # 500 ms hold after speech drops
+        _preroll: list[bytes] = []
+        _hold_counter = 0
+        _gate_open = False
+
         try:
             while self._running:
                 chunk = await pcm_queue.get()
@@ -268,10 +278,34 @@ class RealtimeTranscriber:
 
                 # Noise gate: silence mic chunks below RMS threshold to prevent
                 # leaked system audio from being transcribed as "Me".
+                # Uses pre-roll (lookback) and hold (release) to avoid clipping
+                # the beginnings and endings of words.
                 if speaker_label == "Me" and self._noise_gate_rms > 0:
                     samples = np.frombuffer(to_send, dtype=np.int16)
                     rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2))
-                    if rms < self._noise_gate_rms:
+
+                    if rms >= self._noise_gate_rms:
+                        # Speech detected — open gate
+                        if not _gate_open:
+                            # Flush pre-roll buffer (catches word beginnings)
+                            for pre_chunk in _preroll:
+                                client.stream(pre_chunk)
+                            _preroll.clear()
+                            _gate_open = True
+                        _hold_counter = _HOLD_CHUNKS
+                    else:
+                        if _gate_open:
+                            # Below threshold but hold still active
+                            _hold_counter -= 1
+                            if _hold_counter <= 0:
+                                _gate_open = False
+                                _preroll.clear()
+
+                    if not _gate_open:
+                        # Gate closed — buffer for pre-roll, send silence
+                        _preroll.append(to_send)
+                        if len(_preroll) > _PREROLL_CHUNKS:
+                            _preroll.pop(0)
                         to_send = b"\x00" * len(to_send)
                         self._chunks_gated["Me"] = self._chunks_gated.get("Me", 0) + 1
 
@@ -281,7 +315,7 @@ class RealtimeTranscriber:
                 if n == 1:
                     self._dbg(f"[{speaker_label}] first PCM chunk sent to AAI ({len(to_send)} B)", "ok")
                     if speaker_label == "Me" and self._noise_gate_rms > 0:
-                        self._dbg(f"[Me] noise gate active (RMS threshold={self._noise_gate_rms})", "info")
+                        self._dbg(f"[Me] noise gate active (RMS threshold={self._noise_gate_rms}, pre-roll={_PREROLL_CHUNKS}, hold={_HOLD_CHUNKS})", "info")
                 elif n % _LOG_EVERY == 0:
                     empty = self._empty_data_calls.get(speaker_label, 0)
                     hits = self._on_data_calls.get(speaker_label, 0)

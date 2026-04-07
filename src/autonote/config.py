@@ -42,7 +42,7 @@ def get_config() -> dict:
     config["MEETINGS_CALENDAR"] = os.environ.get("MEETINGS_CALENDAR", os.path.abspath("./meetings_calendar.yml"))
     config["ENTITIES_FILE"] = os.environ.get("ENTITIES_FILE", os.path.abspath("./entities.yml"))
     config["MIC_VOLUME"] = os.environ.get("MIC_VOLUME", "2.0")
-    config["MIC_NOISE_GATE_RMS"] = os.environ.get("MIC_NOISE_GATE_RMS", "200")
+    config["MIC_NOISE_GATE_RMS"] = os.environ.get("MIC_NOISE_GATE_RMS", "500")
     config["MIC_SOURCE"] = os.environ.get("MIC_SOURCE", "")
     config["SYSTEM_SOURCE"] = os.environ.get("SYSTEM_SOURCE", "")
     config["LLM_COST_LOG"] = os.environ.get("LLM_COST_LOG", os.path.expanduser("~/.autonote_costs.jsonl"))
