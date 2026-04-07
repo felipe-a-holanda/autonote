@@ -159,6 +159,10 @@ class ContextManager:
         self._reply_worker = ReplyWorker(dispatcher)
         self._coach_worker = CoachWorker(dispatcher)
 
+        # Coach in-flight guard: prevent stacking concurrent coach calls
+        self._coach_in_flight: bool = False
+        self._coach_pending: bool = False
+
         # Apply profile overrides if a brief is provided
         if mission_brief is not None:
             self.SUMMARY_EVERY_N_TURNS = mission_brief.summary_every_n_turns
@@ -234,8 +238,17 @@ class ContextManager:
             self._fire_task(self._run_reply_auto())
             self.state.turns_since_last_reply = 0
 
-        if self._mission_brief and self.COACH_EVERY_N_TURNS > 0 and self.state.turns_since_last_coach >= self.COACH_EVERY_N_TURNS:
-            self._fire_task(self._run_coach())
+        if (self._mission_brief
+                and self.COACH_EVERY_N_TURNS > 0
+                and self.state.turns_since_last_coach >= self.COACH_EVERY_N_TURNS
+                and turn.speaker != "Me"):
+            if not self._coach_in_flight:
+                self._coach_in_flight = True
+                self._coach_pending = False
+                self._fire_task(self._run_coach())
+            else:
+                self._coach_pending = True
+                self._debug("LLM: coach skipped (in-flight), queued follow-up")
             self.state.turns_since_last_coach = 0
 
     async def handle_custom_prompt(self, prompt: str) -> None:
@@ -412,6 +425,13 @@ class ContextManager:
         except Exception as exc:
             self._debug(f"LLM: coach failed — {exc}", "error")
             logger.warning("Coach task failed, skipping: %s", exc)
+        finally:
+            self._coach_in_flight = False
+            if self._coach_pending:
+                self._debug("LLM: coach follow-up firing (was pending)", "info")
+                self._coach_pending = False
+                self._coach_in_flight = True
+                self._fire_task(self._run_coach())
 
     async def shutdown(self) -> None:
         """Cancel all running reasoning tasks."""

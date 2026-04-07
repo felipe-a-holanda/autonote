@@ -15,6 +15,7 @@ from autonote.realtime.models import (
     ReplySuggestion,
     CustomPromptResult,
 )
+from autonote.reasoning.mission import MissionBrief
 
 
 def make_segment(text: str = "Hello", speaker: str = "Me", start: float = 0.0, end: float = 1.0, partial: bool = False) -> TranscriptSegment:
@@ -212,11 +213,15 @@ class TestContextManager:
             received.append(evt)
 
         dispatcher = make_dispatcher()
+        brief = MissionBrief(
+            name="test", goal="test", role="tester",
+            summary_every_n_turns=summary_every,
+            action_items_every_n_turns=action_every,
+        )
         cm = ContextManager(
             dispatcher=dispatcher,
             on_event=on_event,
-            summary_every_n=summary_every,
-            action_scan_every_n=action_every,
+            mission_brief=brief,
             session_id="test-session",
         )
         return cm, received
@@ -381,11 +386,15 @@ class TestContextManagerTurnTriggers:
             received.append(evt)
 
         dispatcher = make_dispatcher()
+        brief = MissionBrief(
+            name="test", goal="test", role="tester",
+            summary_every_n_turns=summary_turns,
+            action_items_every_n_turns=action_turns,
+        )
         cm = ContextManager(
             dispatcher=dispatcher,
             on_event=on_event,
-            summary_every_n_turns=summary_turns,
-            action_scan_every_n_turns=action_turns,
+            mission_brief=brief,
             session_id="test-turns",
         )
         return cm, received
@@ -482,3 +491,111 @@ class TestContextManagerTurnTriggers:
         dispatcher = make_dispatcher()
         cm = ContextManager(dispatcher=dispatcher, on_event=AsyncMock(), session_id="t")
         assert cm.ACTION_SCAN_EVERY_N_TURNS == 3
+
+
+# ---------------------------------------------------------------------------
+# ContextManager — coach in-flight guard & speaker filter
+# ---------------------------------------------------------------------------
+
+class TestCoachGuard:
+    """Tests for the coach in-flight guard (Option A) and speaker filter (Option C)."""
+
+    def _make_cm_with_coach(self, coach_every: int = 1) -> tuple[ContextManager, list]:
+        received: list = []
+
+        async def on_event(evt):
+            received.append(evt)
+
+        dispatcher = make_dispatcher()
+        brief = MissionBrief(
+            name="test",
+            goal="test",
+            role="tester",
+            summary_enabled=False,
+            action_items_enabled=False,
+            contradictions_enabled=False,
+            coach_every_n_turns=coach_every,
+        )
+        cm = ContextManager(
+            dispatcher=dispatcher,
+            on_event=on_event,
+            mission_brief=brief,
+            session_id="test-coach",
+        )
+        return cm, received
+
+    async def test_coach_skips_my_turns(self):
+        """Coach should NOT fire on speaker='Me' turns."""
+        cm, _ = self._make_cm_with_coach(coach_every=1)
+        with patch.object(cm, "_fire_task") as mock_fire:
+            await cm.on_new_turn(make_turn("I said something", speaker="Me"))
+            mock_fire.assert_not_called()
+
+    async def test_coach_fires_on_them_turns(self):
+        """Coach SHOULD fire on speaker='Them' turns."""
+        cm, _ = self._make_cm_with_coach(coach_every=1)
+        with patch.object(cm, "_fire_task") as mock_fire:
+            await cm.on_new_turn(make_turn("They said something", speaker="Them"))
+            assert mock_fire.called
+
+    async def test_coach_in_flight_guard_prevents_stacking(self):
+        """Second 'Them' turn should NOT fire coach when one is already in-flight."""
+        cm, _ = self._make_cm_with_coach(coach_every=1)
+        with patch.object(cm, "_fire_task"):
+            await cm.on_new_turn(make_turn("first", speaker="Them", start=0.0, end=1.0))
+            assert cm._coach_in_flight is True
+
+            # Simulate: coach is still running, second turn arrives
+            await cm.on_new_turn(make_turn("second", speaker="Them", start=2.0, end=3.0))
+            assert cm._coach_pending is True
+
+    async def test_coach_in_flight_guard_fires_only_once(self):
+        """Multiple 'Them' turns while in-flight should result in exactly 1 _fire_task call."""
+        cm, _ = self._make_cm_with_coach(coach_every=1)
+        with patch.object(cm, "_fire_task") as mock_fire:
+            # First turn: fires coach
+            await cm.on_new_turn(make_turn("first", speaker="Them", start=0.0, end=1.0))
+            # Next 3 turns: all skipped (in-flight), only set pending
+            for i in range(3):
+                await cm.on_new_turn(make_turn(f"turn{i}", speaker="Them", start=float(i+2), end=float(i+3)))
+            assert mock_fire.call_count == 1
+
+    async def test_coach_follow_up_fires_after_completion(self):
+        """When coach completes with pending=True, a follow-up should fire."""
+        cm, received = self._make_cm_with_coach(coach_every=1)
+        # Add some turns to give coach context
+        cm.state.add_turn(make_turn("context", speaker="Them", start=0.0, end=1.0))
+
+        from autonote.realtime.models import CoachSuggestion
+        mock_suggestion = CoachSuggestion(
+            should_speak=True, confidence="high",
+            suggestion="do this", argument_used=None,
+            reasoning="test", timestamp=1.0,
+        )
+        with patch.object(cm._coach_worker, "execute", new=AsyncMock(return_value=mock_suggestion)):
+            # Simulate: set pending before running coach
+            cm._coach_pending = True
+            cm._coach_in_flight = True
+            await cm._run_coach()
+
+        # After completion: the follow-up should have fired (in_flight set again)
+        # The first _run_coach sets in_flight=False in finally, sees pending=True, fires another
+        assert cm._coach_in_flight is True  # follow-up was spawned
+
+    async def test_coach_resets_in_flight_on_failure(self):
+        """If coach fails, in-flight flag should still reset so future calls work."""
+        cm, _ = self._make_cm_with_coach(coach_every=1)
+        cm.state.add_turn(make_turn("context", speaker="Them"))
+
+        with patch.object(cm._coach_worker, "execute", new=AsyncMock(side_effect=RuntimeError("LLM down"))):
+            cm._coach_in_flight = True
+            await cm._run_coach()
+
+        assert cm._coach_in_flight is False
+
+    async def test_my_turns_still_increment_coach_counter(self):
+        """'Me' turns should still count towards turns_since_last_coach via add_turn."""
+        cm, _ = self._make_cm_with_coach(coach_every=3)
+        cm.state.add_turn(make_turn("a", speaker="Me"))
+        cm.state.add_turn(make_turn("b", speaker="Me"))
+        assert cm.state.turns_since_last_coach == 2
