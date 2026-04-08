@@ -145,6 +145,7 @@ class AssemblyAIProvider(TranscriptionProvider):
         config = aai.TranscriptionConfig(
             language_code=language if language else None,
             speech_models=["universal-3-pro"],
+            speaker_labels=True,
         )
         
         log_info("Starting AssemblyAI transcription...")
@@ -178,29 +179,35 @@ class AssemblyAIProvider(TranscriptionProvider):
             log_error(f"Failed to log AssemblyAI cost: {e}")
         
         segments = []
-        full_text_parts = []
-        
-        if transcript.words:
+
+        # Use utterances (speaker-diarized) when available
+        if transcript.utterances:
+            for utt in transcript.utterances:
+                segments.append({
+                    "start": utt.start / 1000.0,
+                    "end": utt.end / 1000.0,
+                    "text": utt.text,
+                    "speaker": utt.speaker,
+                })
+        elif transcript.words:
             for word in transcript.words:
                 segments.append({
                     "start": word.start / 1000.0,
                     "end": word.end / 1000.0,
                     "text": word.text,
                 })
-                full_text_parts.append(word.text)
-        
+
         if not segments and transcript.text:
             segments.append({
                 "start": 0.0,
                 "end": 0.0,
                 "text": transcript.text,
             })
-            full_text_parts.append(transcript.text)
-        
+
         return {
             "language": detected_language,
             "segments": segments,
-            "text": transcript.text or " ".join(full_text_parts),
+            "text": transcript.text or "",
         }
     
     def get_provider_name(self) -> str:

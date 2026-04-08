@@ -77,7 +77,17 @@ def save_transcription(result: dict, output_file: str, format: str):
     output_path = Path(output_file)
 
     if format == "txt":
-        output_path.write_text(result["text"])
+        has_speakers = any("speaker" in seg for seg in result.get("segments", []))
+        if has_speakers:
+            lines = []
+            for seg in result["segments"]:
+                mins = int(seg["start"] // 60)
+                secs = int(seg["start"] % 60)
+                ts = f"[{mins:02d}:{secs:02d}]"
+                lines.append(f"{ts} {seg['speaker']}: {seg['text']}")
+            output_path.write_text("\n".join(lines))
+        else:
+            output_path.write_text(result["text"])
 
     elif format == "json":
         output_path.write_text(json.dumps(result, indent=2))
