@@ -28,6 +28,7 @@ from autonote.reasoning.mission import MissionBrief
 from autonote.reasoning.workers.summary import SummaryWorker
 from autonote.reasoning.workers.action_items import ActionItemWorker
 from autonote.reasoning.workers.contradictions import ContradictionWorker
+from autonote.reasoning.workers.adhoc_reply import AdhocReplyWorker
 from autonote.reasoning.workers.coach import CoachWorker
 from autonote.reasoning.workers.custom import CustomPromptWorker
 from autonote.reasoning.workers.reply import ReplyWorker
@@ -157,6 +158,7 @@ class ContextManager:
         self._contradiction_worker = ContradictionWorker(dispatcher)
         self._custom_prompt_worker = CustomPromptWorker(dispatcher)
         self._reply_worker = ReplyWorker(dispatcher)
+        self._adhoc_reply_worker = AdhocReplyWorker(dispatcher)
         self._coach_worker = CoachWorker(dispatcher)
 
         # Coach in-flight guard: prevent stacking concurrent coach calls
@@ -301,6 +303,32 @@ class ContextManager:
         """Manually trigger a coach suggestion (requires mission_brief to be set)."""
         if self._mission_brief:
             await self._run_coach()
+
+    async def handle_adhoc_reply_request(self) -> None:
+        """Generate a single strategic reply using the smartest model."""
+        self._debug("LLM: ad-hoc smart reply requested...", "info")
+        try:
+            timestamp = (
+                self.state.turns[-1].timestamp_end
+                if self.state.turns
+                else (self.state.segments[-1].timestamp_end if self.state.segments else 0.0)
+            )
+            mission_section = ""
+            if self._mission_brief:
+                mission_section = (
+                    "== YOUR MISSION ==\n" + self._mission_brief.format_for_prompt()
+                )
+            result = await self._adhoc_reply_worker.execute(
+                full_context=self.state.get_full_context(last_n=None),
+                mission_section=mission_section,
+                timestamp=timestamp,
+                model_override="smartest",
+            )
+            self._debug("LLM: ad-hoc smart reply done", "ok")
+            await self.on_event(result)
+        except Exception as exc:
+            self._debug(f"LLM: ad-hoc smart reply failed — {exc}", "error")
+            logger.warning("Ad-hoc reply failed: %s", exc)
 
     def _window(self, default: int) -> Optional[int]:
         """Return None (unlimited) when full_transcript mode is on, else default."""

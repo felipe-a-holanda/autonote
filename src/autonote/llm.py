@@ -21,6 +21,7 @@ LLM_PRESETS = {
     "cheap": config.get("PRESET_CHEAP"),
     "fast": config.get("PRESET_FAST"),
     "smart": config.get("PRESET_SMART"),
+    "smartest": config.get("PRESET_SMARTEST"),
 }
 
 def _recording_base(source_file: str) -> tuple[Path, str]:

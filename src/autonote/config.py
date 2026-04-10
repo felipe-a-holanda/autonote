@@ -29,6 +29,7 @@ def get_config() -> dict:
     config["PRESET_CHEAP"] = os.environ.get("PRESET_CHEAP", "deepseek/deepseek-chat")
     config["PRESET_FAST"] = os.environ.get("PRESET_FAST", "openai/gpt-4o")
     config["PRESET_SMART"] = os.environ.get("PRESET_SMART", "anthropic/claude-3-5-sonnet-20240620")
+    config["PRESET_SMARTEST"] = os.environ.get("PRESET_SMARTEST", "anthropic/claude-opus-4-6")
     _default_model = os.environ.get("MODEL", os.environ.get("LLM_MODEL", os.environ.get("OLLAMA_MODEL", DEFAULT_MODEL)))
     config["MODEL"] = _default_model
     config["MODEL_REFORMAT"] = os.environ.get("MODEL_REFORMAT", _default_model)

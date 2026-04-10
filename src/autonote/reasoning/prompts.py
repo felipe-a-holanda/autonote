@@ -140,6 +140,30 @@ Respond in JSON:
   "confidence": "high|medium|low"
 }}"""
 
+ADHOC_REPLY_PROMPT = """\
+You are an expert meeting strategist providing a single, powerful reply suggestion.
+
+{mission_section}
+
+== FULL MEETING TRANSCRIPT ==
+{full_context}
+
+The user needs to respond RIGHT NOW. Based on everything discussed so far, \
+craft the ideal reply.
+
+Requirements:
+- One concrete, ready-to-speak reply (not multiple options)
+- Tailored to the full conversation arc, not just the last exchange
+- If a mission brief is provided, align with the stated goal and available arguments
+- Be specific and actionable — the user should be able to say this verbatim
+- Write in the same language as the transcript
+
+Respond in JSON:
+{{
+  "reply": "The exact words to say",
+  "reasoning": "Why this reply is strategically effective right now"
+}}"""
+
 # Map task names to prompt templates for easy lookup by the dispatcher
 PROMPT_MAP: dict[str, str] = {
     "summary": PROGRESSIVE_SUMMARY,
@@ -148,4 +172,5 @@ PROMPT_MAP: dict[str, str] = {
     "reply": REPLY_SUGGESTION,
     "custom": CUSTOM_PROMPT_TEMPLATE,
     "coach": COACH_PROMPT,
+    "adhoc_reply": ADHOC_REPLY_PROMPT,
 }

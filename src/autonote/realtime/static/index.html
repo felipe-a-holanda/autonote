@@ -69,6 +69,15 @@
   }
   .divider:hover, .divider.active { background: var(--accent); }
 
+  /* Vertical dividers between right-column panels */
+  .v-divider {
+    flex: 0 0 4px;
+    background: var(--border);
+    cursor: row-resize;
+    transition: background 0.15s;
+  }
+  .v-divider:hover, .v-divider.active { background: var(--accent); }
+
   /* Panels */
   .panel {
     background: var(--surface);
@@ -145,12 +154,11 @@
     left: calc(50% + 2px);
     display: flex;
     flex-direction: column;
-    gap: 4px;
     overflow: hidden;
   }
-  .right-col > .panel { flex: 1; min-height: 0; }
+  .right-col > .panel { flex: none; min-height: 0; overflow: hidden; }
   .right-col > .panel.hidden { display: none; }
-  .right-col > #coach-panel { flex: 3; }
+  #smart-reply-panel { border-left: 3px solid #f57f17; }
 
   /* Coach panel: two-zone layout */
   #coach-panel {
@@ -292,6 +300,7 @@
   .label-speak { background: #1b5e20; color: #a5d6a7; }
   .label-wait { background: #e65100; color: #ffcc80; }
   .label-custom { background: #6a1b9a; color: #ce93d8; }
+  .label-smart { background: #f57f17; color: #fff9c4; }
   .confidence { font-size: 10px; color: var(--dim); margin-left: 6px; }
   .dim { color: var(--dim); font-size: 12px; }
   .suggestion-list { list-style: none; padding-left: 0; }
@@ -355,6 +364,10 @@
 
   <!-- Right: Stacked panels -->
   <div class="right-col">
+    <div id="smart-reply-panel" class="panel">
+      <div class="panel-header"><span>Smart Reply <kbd style="font-size:9px;color:var(--dim);margin-left:4px;border:1px solid var(--border);padding:0 3px;border-radius:2px">R</kbd></span><button class="panel-minimize" data-panel="smart-reply-panel" title="Minimize">&minus;</button></div>
+      <div id="smart-reply-body" class="panel-body" style="white-space:pre-wrap;line-height:1.5">Press <kbd>R</kbd> to get a smart reply...</div>
+    </div>
     <div id="coach-panel" class="panel">
       <div class="panel-header"><span>Coach</span><button class="panel-minimize" data-panel="coach-panel" title="Minimize">&minus;</button></div>
       <div id="coach-current" class="coach-zone">
@@ -430,6 +443,7 @@ function connect() {
       case 'action_items_update': handleActionItems(event); break;
       case 'contradiction_alert': handleContradiction(event); break;
       case 'reply_suggestion': handleReply(event); break;
+      case 'adhoc_reply_suggestion': handleAdhocReply(event); break;
       case 'coach_suggestion': handleCoach(event); break;
       case 'custom_prompt_result': handleCustom(event); break;
     }
@@ -659,6 +673,29 @@ function handleCustom(event) {
   autoScroll(body);
 }
 
+// --- Ad-hoc Smart Reply ---
+
+let adhocReplyPending = false;
+
+function handleAdhocReply(event) {
+  adhocReplyPending = false;
+  const body = $('smart-reply-body');
+  body.innerHTML =
+    `<div class="entry-time">${now()}</div>` +
+    `<span class="entry-label label-smart">SMART REPLY</span>` +
+    `<div style="margin-top:6px;font-size:14px">${escapeHtml(event.reply)}</div>` +
+    `<div class="dim" style="margin-top:8px">${escapeHtml(event.reasoning)}</div>`;
+}
+
+function requestAdhocReply() {
+  if (adhocReplyPending) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  adhocReplyPending = true;
+  $('smart-reply-body').innerHTML =
+    `<div style="color:var(--yellow)">Thinking with smartest model...</div>`;
+  ws.send(JSON.stringify({ action: 'adhoc_reply' }));
+}
+
 // --- Input ---
 
 $('coach-prev-btn').addEventListener('click', prevCoach);
@@ -673,6 +710,16 @@ $('prompt-input').addEventListener('keydown', (e) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ action: 'custom_prompt', prompt: val }));
     }
+  }
+});
+
+// --- Keyboard shortcuts ---
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'r' || e.key === 'R') {
+    e.preventDefault();
+    requestAdhocReply();
   }
 });
 
@@ -728,6 +775,7 @@ const PANEL_MAP = {
   action_items: 'actions-panel',
   alerts: 'alerts-panel',
   coach: 'coach-panel',
+  smart_reply: 'smart-reply-panel',
 };
 
 const MAX_HEIGHT_MAP = {
@@ -735,6 +783,7 @@ const MAX_HEIGHT_MAP = {
   action_items: 'actions-panel',
   alerts: 'alerts-panel',
   coach: 'coach-panel',
+  smart_reply: 'smart-reply-panel',
 };
 
 async function applyConfig() {
@@ -779,12 +828,115 @@ document.querySelectorAll('.panel-minimize').forEach(btn => {
     const minimized = panel.classList.toggle('minimized');
     btn.innerHTML = minimized ? '+' : '&minus;';
     btn.title = minimized ? 'Expand' : 'Minimize';
+    if (window._initVerticalDividers) window._initVerticalDividers();
   });
 });
 
+// --- Vertical panel dividers (resizable) ---
+
+(function() {
+  const MIN_PANEL_HEIGHT = 30; // header-only
+  const rightCol = document.querySelector('.right-col');
+  let vDragging = null;
+
+  function initVerticalDividers() {
+    // Remove any previously inserted dividers
+    rightCol.querySelectorAll('.v-divider').forEach(d => d.remove());
+
+    // Collect visible panels
+    const panels = Array.from(rightCol.querySelectorAll(':scope > .panel:not(.hidden)'));
+    if (panels.length < 2) return;
+
+    // Compute available height and assign initial pixel heights
+    const totalHeight = rightCol.clientHeight;
+    const dividerTotal = (panels.length - 1) * 4;
+    const available = totalHeight - dividerTotal;
+
+    // Weight: coach gets 3x, others get 1x
+    let totalWeight = 0;
+    const weights = panels.map(p => {
+      const w = p.id === 'coach-panel' ? 3 : 1;
+      totalWeight += w;
+      return w;
+    });
+
+    panels.forEach((panel, i) => {
+      const h = Math.max(MIN_PANEL_HEIGHT, Math.floor(available * weights[i] / totalWeight));
+      panel.style.height = h + 'px';
+      panel.style.flex = 'none';
+    });
+
+    // Insert dividers between panels
+    for (let i = 0; i < panels.length - 1; i++) {
+      const div = document.createElement('div');
+      div.className = 'v-divider';
+      div.dataset.above = i.toString();
+      panels[i].after(div);
+    }
+  }
+
+  // Drag handlers (registered once)
+  rightCol.addEventListener('mousedown', (e) => {
+    if (!e.target.classList.contains('v-divider')) return;
+    const idx = parseInt(e.target.dataset.above);
+    const visiblePanels = Array.from(rightCol.querySelectorAll(':scope > .panel:not(.hidden)'));
+    const above = visiblePanels[idx];
+    const below = visiblePanels[idx + 1];
+    if (!above || !below) return;
+
+    vDragging = {
+      divider: e.target,
+      abovePanel: above,
+      belowPanel: below,
+      startY: e.clientY,
+      startAboveH: above.offsetHeight,
+      startBelowH: below.offsetHeight,
+    };
+    e.target.classList.add('active');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!vDragging) return;
+    const dy = e.clientY - vDragging.startY;
+    let newAbove = vDragging.startAboveH + dy;
+    let newBelow = vDragging.startBelowH - dy;
+
+    if (newAbove < MIN_PANEL_HEIGHT) {
+      newBelow += (newAbove - MIN_PANEL_HEIGHT);
+      newAbove = MIN_PANEL_HEIGHT;
+    }
+    if (newBelow < MIN_PANEL_HEIGHT) {
+      newAbove += (newBelow - MIN_PANEL_HEIGHT);
+      newBelow = MIN_PANEL_HEIGHT;
+    }
+    if (newAbove < MIN_PANEL_HEIGHT || newBelow < MIN_PANEL_HEIGHT) return;
+
+    vDragging.abovePanel.style.height = newAbove + 'px';
+    vDragging.belowPanel.style.height = newBelow + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!vDragging) return;
+    vDragging.divider.classList.remove('active');
+    vDragging = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+
+  window._initVerticalDividers = initVerticalDividers;
+})();
+
 // --- Start ---
-applyConfig();
-connect();
+
+async function start() {
+  await applyConfig();
+  window._initVerticalDividers();
+  connect();
+}
+start();
 </script>
 </body>
 </html>

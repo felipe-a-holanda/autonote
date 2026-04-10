@@ -93,6 +93,6 @@ clean:
     
     
 perigon:
-    autonote realtime-web --profile perigon_negotiation_coach.yaml --full-transcript --model smart
+    autonote realtime-web --profile perigon_negotiation_coach_phase_2_v3.yaml --full-transcript --model smart
     
   

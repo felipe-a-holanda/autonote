@@ -33,11 +33,18 @@ class LLMDispatcher:
         self.model = model
         self.source_file = source_file
 
-    async def run(self, task_name: str, **kwargs: str) -> str:
+    async def run(
+        self,
+        task_name: str,
+        *,
+        model_override: Optional[str] = None,
+        **kwargs: str,
+    ) -> str:
         """Run a reasoning task by formatting a prompt and calling the LLM.
 
         Args:
             task_name: Key in PROMPT_MAP (e.g. "summary", "action_items").
+            model_override: If set, use this model instead of the dispatcher's default.
             **kwargs: Variables to format into the prompt template.
 
         Returns:
@@ -50,13 +57,15 @@ class LLMDispatcher:
         prompt_template = PROMPT_MAP[task_name]
         prompt = prompt_template.format(**kwargs)
 
+        effective_model = model_override or self.model
+
         logger.debug(
             "Dispatching task '%s' (prompt length: %d chars)",
             task_name, len(prompt),
             extra={"structured": {
                 "event": "llm_request",
                 "task": task_name,
-                "model": self.model,
+                "model": effective_model,
                 "prompt": prompt,
             }},
         )
@@ -65,7 +74,7 @@ class LLMDispatcher:
         result = await asyncio.to_thread(
             query_llm,
             prompt=prompt,
-            model=self.model,
+            model=effective_model,
             stage=f"realtime_{task_name}",
             source_file=self.source_file,
         )

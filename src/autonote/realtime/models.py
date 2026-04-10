@@ -152,6 +152,20 @@ class CustomPromptResult(BaseModel):
         return self.result
 
 
+class AdhocReplySuggestion(BaseModel):
+    """Reply suggestion generated on demand using the smartest available model."""
+
+    type: Literal["adhoc_reply_suggestion"] = "adhoc_reply_suggestion"
+    reply: str
+    reasoning: str
+    timestamp: float
+
+    @computed_field
+    @property
+    def display_text(self) -> str:
+        return self.reply
+
+
 class CoachSuggestion(BaseModel):
     """Proactive coaching suggestion from a mission-briefed coach worker."""
 
@@ -180,6 +194,7 @@ RealtimeEvent = (
     | ActionItemsUpdate
     | ContradictionAlert
     | ReplySuggestion
+    | AdhocReplySuggestion
     | CustomPromptResult
     | CoachSuggestion
     | SpeechStateEvent

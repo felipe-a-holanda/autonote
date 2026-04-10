@@ -259,6 +259,7 @@ async def get_config():
                 "action_items": p.action_items,
                 "alerts": p.alerts,
                 "coach": p.coach,
+                "smart_reply": True,
             },
             "max_heights": {
                 "summary": p.summary_max_height,
@@ -268,7 +269,7 @@ async def get_config():
             },
         }
     return {
-        "panels": {"summary": True, "action_items": True, "alerts": True, "coach": False},
+        "panels": {"summary": True, "action_items": True, "alerts": True, "coach": False, "smart_reply": True},
         "max_heights": {},
     }
 
@@ -339,7 +340,7 @@ async def _ws_send(ws: WebSocket, queue: asyncio.Queue) -> None:
             display = data.get("display_text") or ""
             speaker = data.get("speaker", "")
             prefix = f"{speaker} " if speaker else ""
-            _LLM_EVENT_TYPES = {"coach_suggestion", "reply_suggestion", "summary_update", "custom_prompt_result", "contradiction_alert"}
+            _LLM_EVENT_TYPES = {"coach_suggestion", "reply_suggestion", "adhoc_reply_suggestion", "summary_update", "custom_prompt_result", "contradiction_alert"}
             log = logger.info if event_type in _LLM_EVENT_TYPES else logger.debug
             log("[web] [ws→UI] %s%s: \"%s\"", prefix, event_type, display)
         except Exception:
@@ -369,6 +370,8 @@ async def _ws_recv(ws: WebSocket) -> None:
             asyncio.create_task(_context_manager.handle_reply_request())
         elif action == "coach":
             asyncio.create_task(_context_manager.handle_coach_request())
+        elif action == "adhoc_reply":
+            asyncio.create_task(_context_manager.handle_adhoc_reply_request())
         elif action == "custom_prompt":
             prompt = data.get("prompt", "").strip()
             if prompt:
